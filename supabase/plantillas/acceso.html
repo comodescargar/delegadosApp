@@ -1,0 +1,22 @@
+<!--
+  Plantilla de correo de acceso (Supabase → Authentication → Emails → Templates).
+  Pegar en «Magic link or OTP» y también en «Confirm sign up» (el primer acceso de una persona nueva).
+  Asunto: Tu acceso a Delegado Fútbol Base
+  {{ .ConfirmationURL }} = enlace de acceso · {{ .Token }} = código (8 cifras, caduca en 1 hora)
+-->
+<div style="font-family: Arial, Helvetica, sans-serif; max-width: 480px; margin: 0 auto; color: #111827;">
+  <h2 style="margin: 0 0 12px;">Entrar en Delegado Fútbol Base</h2>
+  <p>Hola. Para entrar en la app, pulsa el botón desde el mismo móvil en el que tienes abierta la app:</p>
+  <p style="margin: 20px 0;">
+    <a href="{{ .ConfirmationURL }}"
+       style="display: inline-block; padding: 12px 22px; background: #16a34a; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: bold;">
+      Entrar en la app
+    </a>
+  </p>
+  <p>Si el botón te abre otro navegador, escribe este código en la pestaña <strong>Club</strong> de la app:</p>
+  <p style="font-size: 30px; font-weight: bold; letter-spacing: 6px; margin: 12px 0 20px;">{{ .Token }}</p>
+  <p style="color: #6b7280; font-size: 13px;">
+    El enlace y el código caducan en una hora y solo sirven una vez.
+    Si no has pedido entrar en la app, ignora este correo.
+  </p>
+</div>

@@ -253,8 +253,8 @@ function iniciar(sb) {
       </form>
       ${enviado ? `<div class="club-form">
         <p>Te hemos enviado un correo a <strong>${esc(enviado)}</strong>. Ábrelo en este mismo móvil y pulsa el enlace.</p>
-        <p class="nota">Si el correo trae un código de 6 cifras, también puedes escribirlo aquí:</p>
-        <div class="club-campos"><input class="entrada" id="accesoCodigo" inputmode="numeric" maxlength="6" placeholder="123456">
+        <p class="nota">Si lo abres en otro sitio, escribe aquí el código que trae el correo:</p>
+        <div class="club-campos"><input class="entrada" id="accesoCodigo" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="Código del correo">
         <button class="btn" id="accesoVerificar" data-email="${esc(enviado)}">Entrar con el código</button></div>
       </div>` : ''}`;
   }
@@ -292,7 +292,7 @@ function iniciar(sb) {
     const t = e.target;
     if (t.id === 'clubSalir') { await sb.auth.signOut(); return; }
     if (t.id === 'accesoVerificar') {
-      const token = cuerpo.querySelector('#accesoCodigo').value.trim();
+      const token = cuerpo.querySelector('#accesoCodigo').value.replace(/\D/g, '');
       const { error } = await sb.auth.verifyOtp({ email: t.dataset.email, token, type: 'email' });
       if (error) aviso(`El código no es válido: ${error.message}`);
       return;
