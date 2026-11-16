@@ -105,6 +105,9 @@ await filas("insert into convocatorias (partido_id, ficha_id, titular) values ($
 await filas("insert into eventos (partido_id, tipo, ficha_id, minuto) values ($1, 'gol', $2, 12)", [partido.id, ficha.id]);
 await filas("insert into eventos (partido_id, tipo, minuto) values ($1, 'gol_rival', 20)", [partido.id]);
 comprobar((await filas('select count(*)::int n from eventos'))[0].n === 2, 'crea partido, convocatoria y goles');
+await filas("update partidos set lugar = 'Campo Municipal', cita = '09:15', es_local = true, notas = 'Equipación azul' where id = $1", [partido.id]);
+comprobar((await filas('select cita from partidos where id = $1', [partido.id]))[0].cita === '09:15', 'guarda campo, citación, casa/fuera y qué llevar');
+comprobar(await falla("update partidos set cita = '25:99' where id = $1", [partido.id]), 'NO acepta una hora de citación imposible');
 // Cambios, tarjetas y minutos
 const [jug2] = await filas("insert into jugadoras (club_id, nombre) values ($1, 'Sara') returning id", [club.id]);
 const [ficha2] = await filas("insert into fichas (equipo_id, jugadora_id, dorsal) values ($1, $2, '10') returning id", [alevin.id, jug2.id]);

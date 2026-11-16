@@ -28,11 +28,19 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
   const comprobar = ({ error }, que) => { if (error) throw new Error(`${que}: ${error.message}`); };
 
   // ---------------------------------------------------------------- Subida
+  // Datos del próximo partido (fecha y hora en la hora local del móvil)
+  const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const fechaPartido = (P) => (P.fecha ? new Date(`${P.fecha}T${HORA.test(P.hora || '') ? P.hora : '00:00'}`).toISOString() : null);
+  const datosPartido = (P) => ({
+    rival: P.rival || '', lugar: P.lugar || null, cita: HORA.test(P.cita || '') ? P.cita : null,
+    es_local: typeof P.local === 'boolean' ? P.local : null, notas: (P.notas || '').slice(0, 500) || null,
+  });
+
   async function asegurarPartido() {
     const P = FA.partido();
     if (!P.partidoId) {
       const { data, error } = await sb.from('partidos')
-        .insert({ equipo_id: equipo.id, rival: P.rival || '', minutos_parte: P.duracion || 25, fecha: new Date().toISOString() })
+        .insert({ equipo_id: equipo.id, minutos_parte: P.duracion || 25, ...datosPartido(P), fecha: fechaPartido(P) })
         .select('id').single();
       comprobar({ error }, 'Crear partido');
       P.partidoId = data.id;
@@ -42,7 +50,8 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
       cola.partido = false;
       guardarCola();
     } else if (cola.partido) {
-      comprobar(await sb.from('partidos').update({ rival: P.rival || '', minutos_parte: P.duracion || 25 }).eq('id', P.partidoId), 'Actualizar partido');
+      const fecha = fechaPartido(P);
+      comprobar(await sb.from('partidos').update({ minutos_parte: P.duracion || 25, ...datosPartido(P), fecha }).eq('id', P.partidoId), 'Actualizar partido');
       cola.partido = false;
       guardarCola();
     }
@@ -145,7 +154,7 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
   async function bajar() {
     const [fi, pa] = await Promise.all([
       sb.from('fichas').select('id, dorsal, foto_path, jugadora_id, tipo, cargo, creada_en, jugadoras(nombre)').eq('equipo_id', equipo.id).eq('activa', true),
-      sb.from('partidos').select('id, rival, minutos_parte').eq('equipo_id', equipo.id).order('creado_en', { ascending: false }).limit(1),
+      sb.from('partidos').select('id, rival, minutos_parte, fecha, lugar, cita, es_local, notas, creado_en').eq('equipo_id', equipo.id).order('creado_en', { ascending: false }).limit(1),
     ]);
     comprobar(fi, 'Leer fichas');
     comprobar(pa, 'Leer partido');
@@ -164,6 +173,18 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
       }
       P.rival = ultimo.rival || '';
       P.duracion = ultimo.minutos_parte || P.duracion;
+      // El próximo partido: si la fecha es la de creación (sin elegir), se deja en blanco
+      if (!cola.partido) {
+        // (los partidos antiguos guardaban como fecha el momento de crearlos: eso no es una fecha elegida)
+        const elegida = ultimo.fecha && Math.abs(Date.parse(ultimo.fecha) - Date.parse(ultimo.creado_en)) > 120000;
+        const f = elegida ? new Date(ultimo.fecha) : null;
+        const dos = (n) => String(n).padStart(2, '0');
+        Object.assign(P, {
+          fecha: f ? `${f.getFullYear()}-${dos(f.getMonth() + 1)}-${dos(f.getDate())}` : P.fecha || '',
+          hora: f && (f.getHours() || f.getMinutes()) ? `${dos(f.getHours())}:${dos(f.getMinutes())}` : (f ? '' : P.hora || ''),
+          lugar: ultimo.lugar || '', cita: ultimo.cita || '', local: ultimo.es_local ?? null, notas: ultimo.notas || '',
+        });
+      }
       const [co, ev] = await Promise.all([
         sb.from('convocatorias').select('ficha_id, dorsal_partido, titular').eq('partido_id', ultimo.id),
         sb.from('eventos').select('id, tipo, ficha_id, ficha_entra, minuto, parte, segundo').eq('partido_id', ultimo.id).order('creado_en'),

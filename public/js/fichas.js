@@ -256,7 +256,9 @@
     // Antes de borrar nada, los minutos finales de cada jugadora quedan para el historial
     if (P.partidoId && relojUsado()) avisarSinc('cerrarPartido', P.partidoId, estadoCampo().seg);
     for (const f of F.lista) { f.dorsalPartido = ''; f.titular = false; f.convocada = true; await guardarFicha(f); }
-    Object.assign(P, { parte: 1, acumulado: 0, desde: null, eventos: [], rival: '', partidoId: null, enlaceArbitro: null, duraciones: [] });
+    Object.assign(P, { parte: 1, acumulado: 0, desde: null, eventos: [], rival: '', partidoId: null, enlaceArbitro: null, duraciones: [],
+      fecha: '', hora: '', cita: '', lugar: '', local: null });
+    $('#pxAvisoPanel').hidden = true;
     Object.assign(M, { sale: null, tarjetaPara: null });
     relojEncendido(false);
     guardarP();
@@ -291,6 +293,73 @@
     P.rival = e.target.value;
     guardarP();
     avisarSinc('partidoCambiado');
+    pintarProximo();
+  });
+
+  // ------------------------------------------------------------------ Próximo partido y aviso a las familias
+  const CAMPOS_PROX = { pxFecha: 'fecha', pxHora: 'hora', pxCita: 'cita', pxLugar: 'lugar', pxNotas: 'notas' };
+  const fechaLarga = (iso) => {
+    if (!iso) return '';
+    const [a, m, d] = iso.split('-').map(Number);
+    return new Date(a, m - 1, d).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+  };
+  function pintarProximo() {
+    for (const [id, campo] of Object.entries(CAMPOS_PROX)) {
+      const el = $('#' + id);
+      if (document.activeElement !== el) el.value = P[campo] || '';
+    }
+    document.querySelectorAll('#pxLocal button').forEach((b) => b.classList.toggle('activo', P.local === (b.dataset.local === '1')));
+    const partes = [fechaLarga(P.fecha), P.hora, P.rival && `vs ${P.rival}`].filter(Boolean);
+    $('#fProxResumen').textContent = partes.length ? partes.join(' · ') : 'sin fecha';
+  }
+  for (const [id, campo] of Object.entries(CAMPOS_PROX)) {
+    $('#' + id).addEventListener('input', (e) => {
+      P[campo] = e.target.value;
+      guardarP();
+      avisarSinc('partidoCambiado');
+      pintarProximo();
+    });
+  }
+  $('#pxLocal').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-local]');
+    if (!b) return;
+    const v = b.dataset.local === '1';
+    P.local = P.local === v ? null : v;
+    guardarP();
+    avisarSinc('partidoCambiado');
+    pintarProximo();
+  });
+
+  function textoAviso() {
+    const equipo = nombreEquipo();
+    const jugadoras = F.lista.filter((f) => !esStaff(f));
+    const conv = jugadoras.filter((f) => f.convocada).sort(porDorsal(nHoy));
+    const l = [`⚽ *${equipo}* · ${P.rival ? `vs ${P.rival}` : 'próximo partido'}${P.local === true ? ' (en casa)' : P.local === false ? ' (fuera)' : ''}`];
+    if (P.fecha) l.push(`📅 ${fechaLarga(P.fecha).replace(/^./, (c) => c.toUpperCase())}`);
+    const horas = [P.hora && `partido a las ${P.hora}`, P.cita && `citación a las ${P.cita}`].filter(Boolean).join(' · ');
+    if (horas) l.push(`⏰ ${horas.replace(/^./, (c) => c.toUpperCase())}`);
+    if (P.lugar) l.push(`📍 ${P.lugar}`);
+    if (P.notas) l.push(`🎒 ${P.notas}`);
+    if (conv.length && conv.length < jugadoras.length) {
+      l.push('', `*Convocadas (${conv.length}):*`);
+      conv.forEach((f) => l.push(`• ${[nHoy(f), f.nombre].filter(Boolean).join(' ') || 'Jugadora'}`));
+    } else if (jugadoras.length) {
+      l.push('', `Convocadas: todo el equipo (${jugadoras.length}).`);
+    }
+    l.push('', 'Por favor, avisad si alguna no puede venir. ¡Gracias!');
+    return l.join('\n');
+  }
+  $('#pxAviso').addEventListener('click', () => {
+    $('#pxAvisoPanel').hidden = false;
+    $('#pxAvisoTexto').value = textoAviso();
+    $('#pxCompartir').hidden = !navigator.share;
+  });
+  $('#pxCompartir').addEventListener('click', async () => {
+    try { await navigator.share({ text: $('#pxAvisoTexto').value }); } catch { /* cancelado */ }
+  });
+  $('#pxCopiar').addEventListener('click', async () => {
+    const area = $('#pxAvisoTexto');
+    try { await navigator.clipboard.writeText(area.value); aviso('Aviso copiado. Pégalo en el grupo de WhatsApp.'); } catch { area.focus(); area.select(); aviso('Selecciona el texto y cópialo.'); }
   });
 
   // ------------------------------------------------------------------ Modo árbitro
@@ -402,13 +471,15 @@
   const claveP = () => 'delegado.partido' + (CTX.equipoId ? '.' + CTX.equipoId : '');
   let P = {};
   function cargarP() {
-    const base = { parte: 1, duracion: 25, modo: 'crono', acumulado: 0, desde: null, eventos: [], rival: '', partidoId: null, duraciones: [] };
+    const base = { parte: 1, duracion: 25, modo: 'crono', acumulado: 0, desde: null, eventos: [], rival: '', partidoId: null, duraciones: [],
+      fecha: '', hora: '', cita: '', lugar: '', local: null, notas: '' };
     let guardado = {};
     try { guardado = JSON.parse(leerLS(claveP(), '{}')) || {}; } catch { guardado = {}; }
     // Versión 0: el rival se guardaba aparte
     if (!CTX.equipoId && guardado.rival === undefined) guardado.rival = leerLS('delegado.fRival', '');
     P = { ...base, ...guardado };
     $('#fRival').value = P.rival || '';
+    if (typeof pintarProximo === 'function') pintarProximo();
   }
   const guardarP = () => escribirLS(claveP(), JSON.stringify(P));
   cargarP();
@@ -963,7 +1034,7 @@
     },
     // Segundos en el campo de cada jugadora en el partido actual: { fichaId: segundos }
     segundosJugados: () => (relojUsado() ? estadoCampo().seg : null),
-    guardarPartido() { guardarP(); $('#fRival').value = P.rival || ''; pintarPartido(); },
+    guardarPartido() { guardarP(); $('#fRival').value = P.rival || ''; pintarProximo(); pintarPartido(); },
   };
 
   // ------------------------------------------------------------------ Inicio

@@ -117,6 +117,14 @@
   .cab h1 { margin: 0 0 4px; font-size: 22px; }
   .nota { font-size: 13px; color: var(--suave); margin: 0; max-width: 60ch; }
   .partido-datos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .f-proximo { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--borde); border-radius: 12px; background: var(--panel); }
+  .f-proximo summary { cursor: pointer; font-weight: 700; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .f-proximo summary small { font-weight: 400; color: var(--suave); }
+  .f-prox-campos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+  .f-prox-campos label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--suave); min-width: 0; }
+  .f-prox-campos .ancho { grid-column: 1 / -1; }
+  .f-prox-campos .entrada { color: var(--texto); width: 100%; }
+  #pxAvisoTexto { width: 100%; margin-top: 8px; font-family: inherit; font-size: 14px; color: var(--texto); }
   .partido-datos input, .entrada { min-width: 0; background: var(--panel2); border: 1px solid var(--borde); border-radius: 10px; padding: 10px 12px; }
   .barra-acc { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .barra-acc .resumen { color: var(--suave); font-size: 13px; flex: 1; min-width: 150px; }
@@ -240,6 +248,8 @@
     .marcador { grid-template-columns: 1fr 1fr; }
     .reloj-caja { grid-column: 1 / -1; order: -1; }
     .partido-datos { grid-template-columns: 1fr; }
+    .f-prox-campos { grid-template-columns: 1fr 1fr; }
+    .f-prox-campos label:first-child { grid-column: 1 / -1; }
     .f-ficha { grid-template-columns: 80px minmax(0, 1fr); }
   }
 </style>
@@ -379,8 +389,33 @@
     <div class="aviso-bd" id="fAvisoBD" hidden>Este navegador no deja guardar datos (¿ventana privada?). Las fichas se perderán al cerrar la página.</div>
     <div class="partido-datos">
       <input id="fEquipo" placeholder="Nuestro equipo (p. ej. Alevín A)" aria-label="Nuestro equipo">
-      <input id="fRival" placeholder="Rival, fecha y hora" aria-label="Rival, fecha y hora">
+      <input id="fRival" placeholder="Rival" aria-label="Rival">
     </div>
+    <details class="f-proximo" id="fProximo">
+      <summary><span>📅 Próximo partido</span> <small id="fProxResumen">sin fecha</small></summary>
+      <div class="f-prox-campos">
+        <label>Día <input type="date" id="pxFecha" class="entrada"></label>
+        <label>Hora del partido <input type="time" id="pxHora" class="entrada"></label>
+        <label>Citación <input type="time" id="pxCita" class="entrada"></label>
+        <label class="ancho">Campo <input id="pxLugar" class="entrada" placeholder="Nombre del campo o dirección" maxlength="200"></label>
+        <div class="ancho segm" id="pxLocal" role="group" aria-label="Dónde se juega">
+          <button type="button" data-local="1">🏠 En casa</button>
+          <button type="button" data-local="0">🚌 Fuera</button>
+        </div>
+        <label class="ancho">Qué llevar u otras notas <input id="pxNotas" class="entrada" placeholder="Equipación azul, espinilleras, agua…" maxlength="500"></label>
+      </div>
+      <p class="nota">Marca abajo a las convocadas y prepara el aviso para el grupo de las familias.</p>
+      <div class="barra-acc">
+        <button type="button" class="btn primario" id="pxAviso">Aviso para las familias</button>
+      </div>
+      <div id="pxAvisoPanel" hidden>
+        <textarea id="pxAvisoTexto" class="entrada" rows="10" aria-label="Texto del aviso"></textarea>
+        <div class="barra-acc">
+          <button type="button" class="btn primario" id="pxCompartir" hidden>Compartir (WhatsApp…)</button>
+          <button type="button" class="btn" id="pxCopiar">Copiar</button>
+        </div>
+      </div>
+    </details>
     <div class="barra-acc">
       <button id="btnArbitro" class="btn primario grande">Enseñar al árbitro</button>
       <span class="resumen" id="fResumen"></span>
