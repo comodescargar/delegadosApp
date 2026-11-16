@@ -4,7 +4,9 @@ import { createClient } from '@supabase/supabase-js';
 import './club.css';
 
 const URL_SB = import.meta.env.VITE_SUPABASE_URL;
-const CLAVE_SB = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Clave pública: la nueva «publishable» (sb_publishable_…) o la antigua «anon». Nunca la secreta.
+const CLAVE_SB = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+if (CLAVE_SB?.startsWith('sb_secret_')) throw new Error('Se ha configurado la clave SECRETA de Supabase en la app. Usa la publishable.');
 const CLAVE_EQUIPO = 'delegado.equipoActivo';
 
 const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

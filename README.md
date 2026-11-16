@@ -41,9 +41,9 @@ npm run build      # genera dist/
    - *Site URL*: la dirección de Netlify (p. ej. `https://delegados.netlify.app`).
    - *Redirect URLs*: añade esa misma dirección y `http://localhost:5173`.
 5. Opcional, recomendado: **Authentication → Email Templates → Magic Link**: añade `Tu código: {{ .Token }}` al texto. Así, si el enlace del correo se abre en otro navegador, se puede escribir el código en la app.
-6. **Project Settings → API**: copia la *Project URL* y la clave *anon public*.
+6. **Project Settings → API Keys**: copia la *Project URL* (`https://<proyecto>.supabase.co`) y la **publishable key** (`sb_publishable_…`).
 
-> La clave `service_role` y la contraseña de la base de datos **no se ponen nunca** en la app ni en el repositorio.
+> La **secret key** (`sb_secret_…`), la `service_role` y la contraseña de la base de datos **no se ponen nunca** en la app ni en el repositorio.
 
 ### 2. Netlify
 
@@ -51,7 +51,7 @@ npm run build      # genera dist/
 2. La configuración de compilación ya está en `netlify.toml` (`npm run build`, carpeta `dist`).
 3. **Site configuration → Environment variables**:
    - `VITE_SUPABASE_URL` = Project URL de Supabase
-   - `VITE_SUPABASE_ANON_KEY` = clave anon public
+   - `VITE_SUPABASE_PUBLISHABLE_KEY` = publishable key (`sb_publishable_…`)
 4. Lanza el despliegue (*Deploys → Trigger deploy*). Cada cambio que se suba a `main` se publicará solo.
 
 ### 3. Primer uso
