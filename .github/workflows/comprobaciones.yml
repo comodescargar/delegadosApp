@@ -1,0 +1,40 @@
+# Comprobaciones automáticas en cada subida y en cada propuesta de cambio (pull request):
+# - sintaxis de los scripts de la app
+# - pruebas de la base de datos (permisos por fila) con un Postgres local (PGlite)
+# - compilación de la app tal y como la publica Netlify
+name: Comprobaciones
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  comprobar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Sintaxis de los scripts
+        run: for f in public/js/*.js scripts/*.mjs; do node --check "$f" || exit 1; done
+
+      - name: Pruebas de la base de datos
+        run: npm run test:bd
+
+      - name: Compilar la app
+        run: npm run build
+
+      - name: Compilar la versión local (artifact)
+        run: npm run publicar:artifact
