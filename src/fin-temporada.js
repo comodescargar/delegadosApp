@@ -29,7 +29,14 @@ export function crearFinTemporada(sb, { aviso, equipoActivo, pararSinc, reanudar
     comprobar(co, 'Leer convocatorias');
     comprobar(ev, 'Leer eventos');
     const nombre = Object.fromEntries(fi.data.map((f) => [f.id, f.jugadoras?.nombre || '']));
+    const en = await sb.from('entrenamientos').select('id, fecha').eq('equipo_id', eq.id).order('fecha');
+    const idsEn = (en.data || []).map((e) => e.id);
+    const as = idsEn.length ? await sb.from('asistencias').select('entrenamiento_id, ficha_id, estado').in('entrenamiento_id', idsEn) : { data: [] };
     return {
+      entrenamientos: (en.data || []).map((e) => ({
+        fecha: e.fecha,
+        asistencia: (as.data || []).filter((a) => a.entrenamiento_id === e.id).map((a) => ({ nombre: nombre[a.ficha_id] || '', estado: a.estado })),
+      })),
       partidos: pa.data.map((p) => ({
         fecha: p.fecha, rival: p.rival, minutosParte: p.minutos_parte,
         convocadas: co.data.filter((c) => c.partido_id === p.id).map((c) => ({
@@ -82,6 +89,8 @@ export function crearFinTemporada(sb, { aviso, equipoActivo, pararSinc, reanudar
     try {
       await borrarArchivos(rutas);
       comprobar(await sb.from('partidos').delete().eq('equipo_id', eq.id), 'Borrar partidos');
+      const en = await sb.from('entrenamientos').delete().eq('equipo_id', eq.id);
+      if (en.error && !/entrenamientos/.test(en.error.message)) throw new Error(`Borrar entrenamientos: ${en.error.message}`);
       comprobar(await sb.from('fichas').delete().eq('equipo_id', eq.id), 'Borrar fichas');
       const { data: n, error } = await sb.rpc('limpiar_jugadoras_sin_ficha', { p_club: eq.club_id });
       if (error) throw new Error(`Borrar nombres de jugadoras: ${error.message}`);

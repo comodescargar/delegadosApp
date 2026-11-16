@@ -5,7 +5,10 @@ import './temporada.css';
 const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const n = (v) => Math.round(v * 10) / 10;
 
-export function crearTemporada(sb, { equipoActivo, partidoActualId }) {
+import { crearEntrenos } from './entrenos.js';
+
+export function crearTemporada(sb, { equipoActivo, partidoActualId, aviso = () => {} }) {
+  const ent = crearEntrenos(sb, { aviso });
   const boton = document.createElement('button');
   boton.dataset.seccion = 'temporada';
   boton.textContent = 'Temporada';
@@ -37,9 +40,11 @@ export function crearTemporada(sb, { equipoActivo, partidoActualId }) {
       const ids = pa.data.map((p) => p.id);
       const vacio = { data: [], error: null };
       const [ev, co, fi] = await Promise.all([
+        // (los entrenamientos se cargan a la vez; no fallan si la tabla aún no existe)
         ids.length ? sb.from('eventos').select('partido_id, tipo, ficha_id, ficha_entra, minuto, parte, segundo').in('partido_id', ids) : vacio,
         ids.length ? sb.from('convocatorias').select('partido_id, ficha_id, titular, segundos_jugados').in('partido_id', ids) : vacio,
         sb.from('fichas').select('id, dorsal, tipo, cargo, activa, jugadoras(nombre)').eq('equipo_id', eq.id),
+        ent.cargar(eq.id),
       ]);
       for (const r of [ev, co, fi]) if (r.error) throw r.error;
       E.datos = calcular(eq, pa.data, ev.data, co.data, fi.data);
@@ -103,13 +108,19 @@ export function crearTemporada(sb, { equipoActivo, partidoActualId }) {
   }
 
   // ---------------------------------------------------------------- Pintado
+  // Jugadoras de alta, por dorsal (para pasar lista)
+  const plantilla = () => E.datos.jugadoras.filter((j) => j.activa)
+    .sort((a, b) => (parseInt(a.dorsal, 10) || 999) - (parseInt(b.dorsal, 10) || 999) || a.nombre.localeCompare(b.nombre, 'es'));
+
   function pintar() {
     const D = E.datos;
     const T = D.totales;
+    D.asistencia = ent.porJugadora();
     if (!D.lista.length) {
       cuerpo.innerHTML = `<div class="t-vacio"><strong>Aún no hay partidos guardados</strong>
         <p>Cada partido se guarda al usar Fichas y Partido con sesión iniciada: la convocatoria, los titulares y los goles.
-        Pulsa «Nuevo partido» al empezar cada jornada y aquí verás la temporada de ${esc(D.equipo)}.</p></div>`;
+        Pulsa «Nuevo partido» al empezar cada jornada y aquí verás la temporada de ${esc(D.equipo)}.</p></div>
+        ${ent.tarjeta(plantilla())}`;
       return;
     }
     const pendiente = D.lista.find((p) => p.esActual && !p.cuenta);
@@ -127,6 +138,7 @@ export function crearTemporada(sb, { equipoActivo, partidoActualId }) {
         <div class="t-tarjeta-cab"><h2 id="tTitGoleadoras">Goleadoras</h2></div>
         ${graficoGoleadoras(D.jugadoras)}
       </section>
+      ${ent.tarjeta(plantilla())}
       <section class="t-tarjeta" aria-labelledby="tTitJug">
         <div class="t-tarjeta-cab"><h2 id="tTitJug">Convocatorias y titularidades</h2></div>
         ${tablaJugadoras(D.jugadoras, T.pj)}
@@ -220,7 +232,10 @@ export function crearTemporada(sb, { equipoActivo, partidoActualId }) {
   function tablaJugadoras(jugadoras, pj) {
     if (!jugadoras.length) return '<p class="nota">Sin jugadoras.</p>';
     const { campo, desc } = E.orden;
-    const valor = { nombre: (j) => j.nombre.toLowerCase(), dorsal: (j) => parseInt(j.dorsal, 10) || 999, conv: (j) => j.conv, tit: (j) => j.tit, goles: (j) => j.goles, seg: (j) => j.seg, tarj: (j) => j.ro * 10 + j.am };
+    const A = E.datos.asistencia || {};
+    const pctEnt = (j) => (A[j.id]?.total ? A[j.id].si / A[j.id].total : -1);
+    const conEnt = Object.keys(A).length > 0;
+    const valor = { nombre: (j) => j.nombre.toLowerCase(), dorsal: (j) => parseInt(j.dorsal, 10) || 999, conv: (j) => j.conv, tit: (j) => j.tit, goles: (j) => j.goles, seg: (j) => j.seg, tarj: (j) => j.ro * 10 + j.am, ent: pctEnt };
     // Minutos y tarjetas solo aparecen cuando ya se han apuntado (los partidos antiguos no los tienen)
     const conMin = jugadoras.some((j) => j.seg > 0);
     const conTarj = jugadoras.some((j) => j.am || j.ro);
@@ -230,7 +245,7 @@ export function crearTemporada(sb, { equipoActivo, partidoActualId }) {
     });
     const th = (c, texto, clase = '') => `<th class="${clase}" aria-sort="${campo === c ? (desc ? 'descending' : 'ascending') : 'none'}"><button data-orden="${c}">${texto}${campo === c ? (desc ? ' ↓' : ' ↑') : ''}</button></th>`;
     return `<div class="t-tabla-cont"><table class="t-tabla">
-      <thead><tr>${th('dorsal', 'Nº', 'num')}${th('nombre', 'Jugadora')}${th('conv', 'Convocada')}${th('tit', 'Titular', 'num')}${conMin ? th('seg', 'Min.', 'num') : ''}${th('goles', 'Goles', 'num')}${conTarj ? th('tarj', 'Tarj.', 'num') : ''}</tr></thead>
+      <thead><tr>${th('dorsal', 'Nº', 'num')}${th('nombre', 'Jugadora')}${th('conv', 'Convocada')}${th('tit', 'Titular', 'num')}${conMin ? th('seg', 'Min.', 'num') : ''}${th('goles', 'Goles', 'num')}${conTarj ? th('tarj', 'Tarj.', 'num') : ''}${conEnt ? th('ent', 'Entrenos', 'num') : ''}</tr></thead>
       <tbody>${lista.map((j) => {
         const pct = pj ? Math.round((j.conv / pj) * 100) : 0;
         const pctTit = j.conv ? Math.round((j.tit / j.conv) * 100) : 0;
@@ -242,7 +257,10 @@ export function crearTemporada(sb, { equipoActivo, partidoActualId }) {
           <td class="num" data-tip="${esc(`${j.nombre}: titular en ${j.tit} de ${j.conv} convocatorias (${pctTit}%)`)}">${j.tit}</td>
           ${conMin ? `<td class="num" data-tip="${esc(`${j.nombre}: ${Math.round(j.seg / 60)} minutos en el campo${j.conv ? ` (${Math.round(j.seg / 60 / j.conv)} de media por convocatoria)` : ''}`)}">${Math.round(j.seg / 60)}</td>` : ''}
           <td class="num"><strong>${j.goles}</strong></td>
-          ${conTarj ? `<td class="num t-tarj">${j.am ? `🟨${j.am > 1 ? j.am : ''}` : ''}${j.ro ? `🟥${j.ro > 1 ? j.ro : ''}` : ''}</td>` : ''}</tr>`;
+          ${conTarj ? `<td class="num t-tarj">${j.am ? `🟨${j.am > 1 ? j.am : ''}` : ''}${j.ro ? `🟥${j.ro > 1 ? j.ro : ''}` : ''}</td>` : ''}
+          ${conEnt ? (A[j.id]?.total
+    ? `<td class="num" data-tip="${esc(`${j.nombre}: vino a ${A[j.id].si} de ${A[j.id].total} entrenamientos${A[j.id].justificada ? ` (${A[j.id].justificada} faltas justificadas)` : ''}`)}">${Math.round(pctEnt(j) * 100)}%</td>`
+    : '<td class="num">–</td>') : ''}</tr>`;
       }).join('')}</tbody></table></div>`;
   }
 
@@ -282,8 +300,16 @@ export function crearTemporada(sb, { equipoActivo, partidoActualId }) {
   }
 
   // ---------------------------------------------------------------- Interacción
-  cuerpo.addEventListener('click', (e) => {
+  cuerpo.addEventListener('click', async (e) => {
     if (e.target.closest('#tRecargar')) { cargar(); return; }
+    if (e.target.closest('[data-ent-abrir], [data-ent-marca], [data-ent-cancelar], [data-ent-guardar], [data-ent-borrar]')) {
+      const eq = equipoActivo();
+      const pend = ent.manejar(e, eq?.id, plantilla());
+      if (e.target.closest('[data-ent-guardar]')) pintar(); // muestra «Guardando…»
+      const r = await pend;
+      if (r === true) cargar(); else if (r === 'pintar') pintar();
+      return;
+    }
     const orden = e.target.closest('[data-orden]');
     if (orden) {
       const c = orden.dataset.orden;
@@ -315,6 +341,9 @@ export function crearTemporada(sb, { equipoActivo, partidoActualId }) {
     if (el) mostrarTip(el, e); else tip.hidden = true;
   });
   cuerpo.addEventListener('pointerleave', () => { tip.hidden = true; });
+  cuerpo.addEventListener('change', (e) => {
+    if (e.target.id === 'entFecha') { ent.cambiarFecha(e.target.value); pintar(); }
+  });
   document.addEventListener('scroll', () => { tip.hidden = true; }, true);
 
   return { cargar };

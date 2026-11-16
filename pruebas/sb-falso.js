@@ -2,13 +2,13 @@
 // Implementa solo lo que usa la app: from().select/insert/upsert/update/delete con eq/order/limit/single,
 // y storage.from().upload/download/remove/createSignedUrls. falso.offline = true simula sin conexión.
 export function crearSbFalso(inicial = {}) {
-  const db = { jugadoras: [], fichas: [], partidos: [], convocatorias: [], eventos: [], enlaces_arbitro: [], ...inicial };
+  const db = { jugadoras: [], fichas: [], partidos: [], convocatorias: [], eventos: [], enlaces_arbitro: [], entrenamientos: [], asistencias: [], ...inicial };
   const archivos = new Map();
   const log = [];
   let reloj = Date.now();
   const ahora = () => new Date(reloj++).toISOString();
   const nuevoId = () => crypto.randomUUID();
-  const claves = { convocatorias: ['partido_id', 'ficha_id'], enlaces_arbitro: ['token'] };
+  const claves = { convocatorias: ['partido_id', 'ficha_id'], asistencias: ['entrenamiento_id', 'ficha_id'], enlaces_arbitro: ['token'] };
   const pk = (t) => claves[t] || ['id'];
   const mismaFila = (t, a, b) => pk(t).every((k) => a[k] === b[k]);
   const sinConexion = () => ({ data: null, error: { message: 'Failed to fetch (sin conexión simulada)' } });

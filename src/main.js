@@ -151,6 +151,7 @@ function iniciar(sb) {
   document.getElementById('appPartido').after(seccion);
 
   const temporada = crearTemporada(sb, {
+    aviso,
     equipoActivo: () => equipoSinc,
     partidoActualId: () => window.FichasApp?.partido()?.partidoId || null,
   });
