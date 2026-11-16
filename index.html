@@ -135,6 +135,13 @@
   .f-chip:has(input:checked) { border-color: var(--acento); color: #86efac; }
   .f-chip:has(input:disabled) { opacity: .45; }
   .f-borrar { align-self: flex-start; background: none; border: 1px solid transparent; color: var(--suave); font-size: 12px; padding: 2px 6px; border-radius: 6px; cursor: pointer; }
+  .f-pasar { background: var(--panel2); border: 1px solid var(--borde); border-radius: 12px; padding: 10px 14px; }
+  .f-pasar summary { cursor: pointer; font-weight: 600; }
+  .f-pasar[open] summary { margin-bottom: 8px; }
+  .f-pasar .barra-acc { margin-top: 8px; }
+  .f-pasar-panel { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .f-pasar-panel p { margin: 0; }
+  .f-pasar-panel textarea { min-height: 70px; font-size: 12px; }
   .f-grupo { grid-column: 1 / -1; margin: 10px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--suave); }
   .f-ficha.staff .f-hoy-et { color: #93c5fd; }
   .f-cargo { background: var(--fondo); border: 1px solid var(--borde); border-radius: 8px; padding: 6px 8px; font-weight: 600; }
@@ -357,6 +364,16 @@
       <button id="fNuevoPartido" class="btn">Nuevo partido</button>
     </div>
     <div id="fLista" class="flista"></div>
+    <details class="f-pasar" id="fPasar">
+      <summary>Pasar fichas a otro móvil o a la app del club</summary>
+      <p class="nota">1. En la app donde están las fichas, pulsa <strong>«Copiar fichas»</strong> y luego «Copiar al portapapeles».
+        2. En la otra app (con sesión iniciada y el equipo elegido), pulsa <strong>«Pegar fichas»</strong>.</p>
+      <div class="barra-acc">
+        <button class="btn" id="fCopiar">Copiar fichas</button>
+        <button class="btn" id="fPegar">Pegar fichas</button>
+      </div>
+      <div id="fPasarPanel" class="f-pasar-panel" hidden></div>
+    </details>
   </div>
 </section>
 

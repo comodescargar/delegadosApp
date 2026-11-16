@@ -571,6 +571,130 @@
   setInterval(() => { if (!$('#appPartido').hidden) pintarReloj(); }, 500);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && P.desde) relojEncendido(true); });
 
+  // ------------------------------------------------------------------ Pasar fichas entre apps (copiar y pegar)
+  // Sirve para llevar las fichas de la versión antigua (o de otro móvil) a la app del club:
+  // se copian como texto (con las fotos reducidas) y se pegan en la otra app.
+  const PREFIJO = 'DELEGADO-FICHAS-v1:';
+  const panelPasar = $('#fPasarPanel');
+  let textoCopia = '';
+
+  async function fotoATexto(blob) {
+    try {
+      const bmp = await createImageBitmap(blob);
+      const k = Math.min(1, 1200 / Math.max(bmp.width, bmp.height));
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(bmp.width * k);
+      cv.height = Math.round(bmp.height * k);
+      cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+      bmp.close?.();
+      return cv.toDataURL('image/jpeg', 0.75);
+    } catch {
+      return await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.onerror = () => r(null); fr.readAsDataURL(blob); });
+    }
+  }
+
+  $('#fCopiar').addEventListener('click', async () => {
+    if (!F.lista.length) { aviso('No hay fichas que copiar en esta app.'); return; }
+    panelPasar.hidden = false;
+    panelPasar.innerHTML = `<p>Preparando ${F.lista.length} fichas…</p>`;
+    const fichas = [];
+    for (const f of F.lista) {
+      fichas.push({
+        tipo: esStaff(f) ? 'staff' : 'jugadora', cargo: esStaff(f) ? f.cargo || 'entrenador' : null,
+        nombre: f.nombre || '', dorsal: esStaff(f) ? '' : f.dorsal || '', imagen: f.imagen ? await fotoATexto(f.imagen) : null,
+      });
+    }
+    textoCopia = PREFIJO + JSON.stringify({ v: 1, fichas });
+    const tam = textoCopia.length > 1048576 ? `${(textoCopia.length / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(textoCopia.length / 1024))} KB`;
+    panelPasar.innerHTML = `<p>Listas <strong>${fichas.length} fichas</strong> (${tam}). Pulsa el botón y después, en la otra app, «Pegar fichas».</p>
+      <div class="barra-acc"><button class="btn primario" id="fCopiarYa">Copiar al portapapeles</button></div>
+      <textarea class="entrada" id="fCopiarTexto" readonly hidden aria-label="Texto de las fichas"></textarea>`;
+  });
+
+  async function textoAFoto(dataUrl) {
+    if (!dataUrl) return null;
+    try {
+      const [cabecera, base64] = dataUrl.split(',');
+      const tipo = (cabecera.match(/data:([^;]+)/) || [])[1] || 'image/jpeg';
+      const bin = atob(base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new Blob([bytes], { type: tipo });
+    } catch { return null; }
+  }
+
+  async function importarFichas(texto) {
+    texto = (texto || '').trim();
+    const i = texto.indexOf(PREFIJO);
+    if (i < 0) { aviso('Ese texto no son fichas copiadas desde la app. Vuelve a pulsar «Copiar fichas» en la otra app.'); return; }
+    let datos;
+    try { datos = JSON.parse(texto.slice(i + PREFIJO.length)); } catch { aviso('El texto está incompleto. Vuelve a copiarlo en la otra app.'); return; }
+    const clave = (f) => `${f.tipo === 'staff' ? 'staff' : 'jugadora'}|${(f.nombre || '').trim().toLowerCase()}|${f.tipo === 'staff' ? f.cargo : f.dorsal || ''}`;
+    const existentes = new Set(F.lista.map((f) => clave({ ...f, tipo: f.tipo || 'jugadora' })));
+    let nuevas = 0; let repetidas = 0;
+    for (const d of datos.fichas || []) {
+      if (existentes.has(clave(d))) { repetidas++; continue; }
+      const staff = d.tipo === 'staff';
+      const f = {
+        id: uuid(), equipoId: CTX.equipoId, tipo: staff ? 'staff' : 'jugadora', cargo: staff ? d.cargo || 'entrenador' : null,
+        nombre: d.nombre || '', dorsal: staff ? '' : d.dorsal || '', dorsalPartido: '', convocada: true, titular: false,
+        creada: Date.now() + nuevas, imagen: await textoAFoto(d.imagen),
+      };
+      await guardarFicha(f);
+      F.lista.push(f);
+      existentes.add(clave(f));
+      avisarSinc('fichaCambiada', f, 'nueva');
+      nuevas++;
+    }
+    F.lista.sort(ordenar);
+    pintar();
+    panelPasar.hidden = true;
+    const destino = CTX.equipoId ? ` a ${CTX.equipoNombre}` : '';
+    aviso(`${nuevas} ${nuevas === 1 ? 'ficha añadida' : 'fichas añadidas'}${destino}${repetidas ? ` (${repetidas} ya estaban)` : ''}.`);
+  }
+
+  $('#fPegar').addEventListener('click', () => {
+    panelPasar.hidden = false;
+    panelPasar.innerHTML = `<p>${CTX.equipoId ? `Las fichas se añadirán a <strong>${esc(CTX.equipoNombre)}</strong> y se subirán a la nube.`
+      : 'No tienes sesión iniciada: las fichas se guardarán solo en este móvil. Para el equipo, entra antes en «Club».'}</p>
+      <div class="barra-acc"><button class="btn primario" id="fPegarPortapapeles">Pegar del portapapeles</button></div>
+      <p class="nota">Si el botón no funciona, mantén pulsado el recuadro, elige «Pegar» y pulsa «Importar».</p>
+      <textarea class="entrada" id="fPegarTexto" placeholder="Pega aquí el texto copiado" aria-label="Texto de las fichas"></textarea>
+      <div class="barra-acc"><button class="btn" id="fImportar">Importar</button></div>`;
+  });
+
+  panelPasar.addEventListener('click', async (e) => {
+    const id = e.target.id;
+    if (id === 'fCopiarYa') {
+      const area = $('#fCopiarTexto');
+      try {
+        await navigator.clipboard.writeText(textoCopia);
+        aviso('Fichas copiadas. Abre la otra app y pulsa «Pegar fichas».');
+      } catch {
+        area.hidden = false;
+        area.value = textoCopia;
+        area.focus();
+        area.select();
+        aviso('No se ha podido copiar solo: el texto está seleccionado, mantén pulsado y elige «Copiar».');
+      }
+    }
+    if (id === 'fPegarPortapapeles') {
+      try {
+        const texto = await navigator.clipboard.readText();
+        e.target.disabled = true;
+        e.target.textContent = 'Importando…';
+        await importarFichas(texto);
+      } catch {
+        aviso('No se ha podido leer el portapapeles. Pega el texto en el recuadro y pulsa «Importar».');
+      }
+    }
+    if (id === 'fImportar') {
+      e.target.disabled = true;
+      await importarFichas($('#fPegarTexto').value);
+      e.target.disabled = false;
+    }
+  });
+
   // ------------------------------------------------------------------ API para la sincronización (src/sync.js)
   let marcarListo;
   window.FichasApp = {
