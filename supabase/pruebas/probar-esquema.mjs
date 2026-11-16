@@ -96,6 +96,12 @@ comprobar(await falla("insert into invitaciones (club_id, equipo_id, email, rol)
 comprobar(await falla("insert into equipos (club_id, temporada_id, nombre, modalidad) values ($1, $2, 'Pirata', 'f7')", [club.id, temp.id]), 'NO puede crear equipos');
 const [partido] = await filas("insert into partidos (equipo_id, rival, fecha) values ($1, 'CD Ejemplo', now()) returning id", [alevin.id]);
 await filas("insert into convocatorias (partido_id, ficha_id, dorsal_partido, titular) values ($1, $2, '14', true)", [partido.id, ficha.id]);
+// Cuerpo técnico: entrenadora en prácticas con foto del DNI, sin dorsal
+const [pers] = await filas("insert into jugadoras (club_id, nombre) values ($1, 'Marta (prácticas)') returning id", [club.id]);
+const [fStaff] = await filas("insert into fichas (equipo_id, jugadora_id, tipo, cargo) values ($1, $2, 'staff', 'practicas') returning id", [alevin.id, pers.id]);
+comprobar(!!fStaff, 'crea la ficha de una entrenadora en prácticas (sin dorsal)');
+comprobar(await falla("insert into fichas (equipo_id, jugadora_id, tipo, cargo) values ($1, $2, 'staff', 'presidente')", [alevin.id, jug.id]), 'NO acepta un cargo desconocido');
+await filas("insert into convocatorias (partido_id, ficha_id, titular) values ($1, $2, true)", [partido.id, fStaff.id]);
 await filas("insert into eventos (partido_id, tipo, ficha_id, minuto) values ($1, 'gol', $2, 12)", [partido.id, ficha.id]);
 await filas("insert into eventos (partido_id, tipo, minuto) values ($1, 'gol_rival', 20)", [partido.id]);
 comprobar((await filas('select count(*)::int n from eventos'))[0].n === 2, 'crea partido, convocatoria y goles');
@@ -132,7 +138,7 @@ comprobar(await falla("insert into jugadoras (club_id, nombre) values ($1, 'Cola
 console.log('\n5. Administrador');
 await como(U.admin);
 comprobar((await filas('select count(*)::int n from equipos'))[0].n === 2, 've los dos equipos');
-comprobar((await filas('select count(*)::int n from jugadoras'))[0].n === 1, 've las jugadoras del club');
+comprobar((await filas('select count(*)::int n from jugadoras'))[0].n === 2, 've a todas las personas del club (jugadoras y cuerpo técnico)');
 comprobar((await filas('select count(*)::int n from miembros_equipo'))[0].n === 2, 've a los miembros de los equipos');
 comprobar((await filas('select titulo from jugadas')).length === 1, 'no ve la jugada privada de la delegada (sí la compartida)');
 
@@ -140,8 +146,10 @@ comprobar((await filas('select titulo from jugadas')).length === 1, 'no ve la ju
 console.log('\n6. Árbitro (sin sesión)');
 await como(null);
 const arb = await filas('select * from public.fichas_arbitro($1)', [enlace.token]);
-comprobar(arb.length === 1 && arb[0].dorsal === '14' && arb[0].nombre === 'Lucía' && arb[0].titular === true, 've la convocada con el dorsal del día');
+comprobar(arb[0]?.tipo === 'jugadora' && arb[0].dorsal === '14' && arb[0].nombre === 'Lucía' && arb[0].titular === true, 've la convocada con el dorsal del día');
 comprobar(arb[0]?.foto_url === 'https://firmada.example/lucia.jpg', 've la foto con el enlace temporal guardado');
+comprobar(arb.length === 2 && arb[1].tipo === 'staff' && arb[1].cargo === 'practicas' && arb[1].dorsal === null && arb[1].titular === false,
+  've a la entrenadora en prácticas después de las jugadoras, sin dorsal ni titular');
 comprobar((await filas('select * from public.fichas_arbitro($1)', ['codigo-inventado'])).length === 0, 'con un código inventado no ve nada');
 comprobar(await falla('select * from fichas'), 'NO puede leer las tablas directamente');
 comprobar(await falla('select public.aceptar_invitaciones()'), 'NO puede aceptar invitaciones');

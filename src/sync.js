@@ -64,14 +64,16 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
       comprobar(await sb.storage.from('fichas').upload(ruta, f.imagen, { upsert: true, contentType: f.imagen.type || 'image/jpeg' }), 'Subir foto');
       f.fotoPath = ruta;
     }
+    const staff = f.tipo === 'staff';
     comprobar(await sb.from('fichas').upsert({
-      id: f.id, equipo_id: equipo.id, jugadora_id: f.jugadoraId, dorsal: f.dorsal || null, foto_path: f.fotoPath || null,
+      id: f.id, equipo_id: equipo.id, jugadora_id: f.jugadoraId, foto_path: f.fotoPath || null,
+      tipo: staff ? 'staff' : 'jugadora', cargo: staff ? f.cargo || 'entrenador' : null, dorsal: staff ? null : f.dorsal || null,
     }), 'Guardar ficha');
     f.enNube = true;
     await FA.guardarLocal(f);
     if (f.convocada) {
       comprobar(await sb.from('convocatorias').upsert({
-        partido_id: partidoId, ficha_id: f.id, dorsal_partido: f.dorsalPartido || null, titular: !!f.titular,
+        partido_id: partidoId, ficha_id: f.id, dorsal_partido: staff ? null : f.dorsalPartido || null, titular: !staff && !!f.titular,
       }), 'Guardar convocatoria');
     } else {
       comprobar(await sb.from('convocatorias').delete().eq('partido_id', partidoId).eq('ficha_id', f.id), 'Quitar de la convocatoria');
@@ -117,7 +119,7 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
   // ---------------------------------------------------------------- Bajada
   async function bajar() {
     const [fi, pa] = await Promise.all([
-      sb.from('fichas').select('id, dorsal, foto_path, jugadora_id, creada_en, jugadoras(nombre)').eq('equipo_id', equipo.id).eq('activa', true),
+      sb.from('fichas').select('id, dorsal, foto_path, jugadora_id, tipo, cargo, creada_en, jugadoras(nombre)').eq('equipo_id', equipo.id).eq('activa', true),
       sb.from('partidos').select('id, rival, minutos_parte').eq('equipo_id', equipo.id).order('creado_en', { ascending: false }).limit(1),
     ]);
     comprobar(fi, 'Leer fichas');
@@ -153,6 +155,7 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
       if (!cola.fichas[r.id]) {
         const c = conv[r.id];
         Object.assign(f, {
+          tipo: r.tipo || 'jugadora', cargo: r.cargo || null,
           nombre: r.jugadoras?.nombre || '', nombreSubido: r.jugadoras?.nombre || '', dorsal: r.dorsal || '',
           dorsalPartido: c?.dorsal_partido || '', convocada: ultimo ? !!c : true, titular: !!c?.titular,
         });

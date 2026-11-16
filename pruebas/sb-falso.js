@@ -49,7 +49,7 @@ export function crearSbFalso(inicial = {}) {
         filas = filas.map(conJoins);
       } else if (this.op === 'insert' || this.op === 'upsert') {
         for (const d of [].concat(this.datos)) {
-          const porDefecto = this.tabla === 'fichas' ? { activa: true } : {};
+          const porDefecto = this.tabla === 'fichas' ? { activa: true, tipo: 'jugadora', cargo: null } : {};
           const fila = { creado_en: ahora(), creada_en: ahora(), ...porDefecto, ...d };
           if (!pk(this.tabla).every((k) => fila[k])) {
             if (this.tabla === 'enlaces_arbitro') fila.token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');

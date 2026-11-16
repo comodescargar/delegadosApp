@@ -97,14 +97,26 @@
     if (isNaN(da) !== isNaN(db)) return isNaN(da) ? 1 : -1;
     return (a.nombre || '').localeCompare(b.nombre || '', 'es') || a.creada - b.creada;
   };
-  const ordenArbitro = (a, b) => (b.titular ? 1 : 0) - (a.titular ? 1 : 0) || porDorsal(nHoy)(a, b);
+  // Cuerpo técnico: sin dorsal ni titular; la foto puede ser la licencia o el DNI
+  const CARGOS = {
+    entrenador: 'Entrenador/a', segundo: '2º entrenador/a', delegado: 'Delegado/a',
+    practicas: 'Entrenador/a en prácticas', auxiliar: 'Auxiliar',
+  };
+  const ORDEN_CARGOS = Object.keys(CARGOS);
+  const esStaff = (f) => f.tipo === 'staff';
+  const porCargo = (a, b) => ORDEN_CARGOS.indexOf(a.cargo) - ORDEN_CARGOS.indexOf(b.cargo)
+    || (a.nombre || '').localeCompare(b.nombre || '', 'es') || a.creada - b.creada;
+  // Jugadoras primero; después el cuerpo técnico por cargo
+  const conStaffAlFinal = (orden) => (a, b) => (esStaff(a) - esStaff(b)) || (esStaff(a) ? porCargo(a, b) : orden(a, b));
 
-  const ordenar = (a, b) => {
+  const ordenArbitro = conStaffAlFinal((a, b) => (b.titular ? 1 : 0) - (a.titular ? 1 : 0) || porDorsal(nHoy)(a, b));
+
+  const ordenar = conStaffAlFinal((a, b) => {
     const da = parseInt(a.dorsal, 10); const db = parseInt(b.dorsal, 10);
     if (!isNaN(da) && !isNaN(db) && da !== db) return da - db;
     if (isNaN(da) !== isNaN(db)) return isNaN(da) ? 1 : -1;
     return (a.nombre || '').localeCompare(b.nombre || '', 'es') || a.creada - b.creada;
-  };
+  });
 
   async function cargar() {
     F.lista = (await todas()).filter((f) => (f.equipoId || null) === CTX.equipoId).sort(ordenar);
@@ -115,22 +127,41 @@
   function pintar() {
     pintarPartido();
     const cont = $('#fLista');
-    const conv = F.lista.filter((f) => f.convocada).length;
-    const tit = F.lista.filter((f) => f.convocada && f.titular).length;
+    const jugadoras = F.lista.filter((f) => !esStaff(f));
+    const staff = F.lista.filter(esStaff);
+    const conv = jugadoras.filter((f) => f.convocada).length;
+    const tit = jugadoras.filter((f) => f.convocada && f.titular).length;
     $('#fResumen').textContent = F.lista.length
-      ? `${F.lista.length} ${F.lista.length === 1 ? 'ficha' : 'fichas'} · ${conv} ${conv === 1 ? 'convocada' : 'convocadas'} · ${tit} ${tit === 1 ? 'titular' : 'titulares'}`
+      ? [`${jugadoras.length} ${jugadoras.length === 1 ? 'jugadora' : 'jugadoras'}`, `${conv} ${conv === 1 ? 'convocada' : 'convocadas'}`,
+        `${tit} ${tit === 1 ? 'titular' : 'titulares'}`, staff.length ? `${staff.length} de cuerpo técnico` : ''].filter(Boolean).join(' · ')
       : '';
     $('#btnArbitro').disabled = !F.lista.length;
-    $('#fMarcar').hidden = !F.lista.length;
+    $('#fMarcar').hidden = !jugadoras.length;
     $('#fNuevoPartido').hidden = !F.lista.length;
     if (!F.lista.length) {
       cont.innerHTML = `<div class="f-vacio">
         <strong>Todavía no hay fichas</strong>
-        <p>Pulsa «Añadir fichas» y elige las fotos de las licencias desde la galería o haz una foto. Puedes seleccionar varias a la vez.</p>
+        <p>Pulsa «Añadir fichas» y elige las fotos de las licencias desde la galería o haz una foto. Puedes seleccionar varias a la vez.
+        Para entrenadores, delegados o entrenadores en prácticas, usa «Cuerpo técnico» (con su licencia o su DNI).</p>
       </div>`;
       return;
     }
-    cont.innerHTML = F.lista.map((f) => `
+    const tarjetaStaff = (f) => `
+      <article class="f-ficha staff${f.convocada ? ' conv' : ''}" data-id="${f.id}">
+        <button class="f-foto" data-ver="${f.id}" aria-label="Ver ficha en grande"><img src="${urlDe(f)}" alt="Ficha de ${esc(f.nombre || 'cuerpo técnico')}"></button>
+        <div class="f-datos">
+          <select class="f-cargo" id="cargo-${f.id}" data-campo="cargo" aria-label="Cargo">
+            ${Object.entries(CARGOS).map(([k, v]) => `<option value="${k}"${f.cargo === k ? ' selected' : ''}>${v}</option>`).join('')}
+          </select>
+          <input class="f-nombre" id="nombre-${f.id}" data-campo="nombre" placeholder="Nombre y apellidos" value="${esc(f.nombre)}" aria-label="Nombre">
+          <div class="f-hoy">
+            <span class="f-hoy-et">Hoy</span>
+            <label class="f-chip"><input type="checkbox" data-campo="convocada" ${f.convocada ? 'checked' : ''}> Va al partido</label>
+          </div>
+          <button class="f-borrar" data-borrar="${f.id}">Borrar ficha</button>
+        </div>
+      </article>`;
+    cont.innerHTML = jugadoras.map((f) => `
       <article class="f-ficha${f.convocada ? ' conv' : ''}" data-id="${f.id}">
         <button class="f-foto" data-ver="${f.id}" aria-label="Ver ficha en grande"><img src="${urlDe(f)}" alt="Ficha de ${esc(f.nombre || 'jugadora')}"></button>
         <div class="f-datos">
@@ -146,7 +177,8 @@
           </div>
           <button class="f-borrar" data-borrar="${f.id}">Borrar ficha</button>
         </div>
-      </article>`).join('');
+      </article>`).join('')
+      + (staff.length ? `<h3 class="f-grupo">Cuerpo técnico</h3>${staff.map(tarjetaStaff).join('')}` : '');
   }
 
   $('#fLista').addEventListener('change', async (e) => {
@@ -158,7 +190,7 @@
     if (campo === 'convocada' && !f.convocada) f.titular = false;
     await guardarFicha(f);
     avisarSinc('fichaCambiada', f, campo);
-    if (campo === 'dorsal') F.lista.sort(ordenar);
+    if (campo === 'dorsal' || campo === 'cargo') F.lista.sort(ordenar);
     if (campo !== 'nombre') pintar();
   });
 
@@ -183,26 +215,33 @@
     aviso(CTX.sinc ? 'Ficha borrada del equipo.' : 'Ficha borrada de este móvil.');
   });
 
-  $('#fFotos').addEventListener('change', async (e) => {
+  async function anadirFichas(e, staff) {
     const archivos = [...e.target.files];
     e.target.value = '';
     if (!archivos.length) return;
     aviso(`Guardando ${archivos.length} ${archivos.length === 1 ? 'ficha' : 'fichas'}…`);
     let n = 0;
     for (const a of archivos) {
-      const f = { id: uuid(), equipoId: CTX.equipoId, nombre: '', dorsal: '', dorsalPartido: '', convocada: true, titular: false, creada: Date.now() + n++, imagen: await comprimir(a) };
+      const f = {
+        id: uuid(), equipoId: CTX.equipoId, tipo: staff ? 'staff' : 'jugadora', cargo: staff ? 'entrenador' : null,
+        nombre: '', dorsal: '', dorsalPartido: '', convocada: true, titular: false, creada: Date.now() + n++, imagen: await comprimir(a),
+      };
       await guardarFicha(f);
       F.lista.push(f);
       avisarSinc('fichaCambiada', f, 'nueva');
     }
     F.lista.sort(ordenar);
     pintar();
-    aviso('Fichas guardadas. Escribe el dorsal y el nombre de cada una.');
-  });
+    aviso(staff ? 'Fichas guardadas. Elige el cargo y escribe el nombre de cada persona.' : 'Fichas guardadas. Escribe el dorsal y el nombre de cada una.');
+  }
+  $('#fFotos').addEventListener('change', (e) => anadirFichas(e, false));
+  $('#fFotosStaff').addEventListener('change', (e) => anadirFichas(e, true));
 
+  // Convocar o desconvocar a todas las jugadoras (el cuerpo técnico no cambia)
   $('#fMarcar').addEventListener('click', async () => {
-    const todasMarcadas = F.lista.every((f) => f.convocada);
-    for (const f of F.lista) {
+    const jugadoras = F.lista.filter((f) => !esStaff(f));
+    const todasMarcadas = jugadoras.every((f) => f.convocada);
+    for (const f of jugadoras) {
       f.convocada = !todasMarcadas;
       if (!f.convocada) f.titular = false;
       await guardarFicha(f);
@@ -257,9 +296,12 @@
   }
 
   function abrirArbitro(idInicial) {
-    const conv = F.lista.filter((f) => f.convocada);
+    // Jugadoras convocadas (todas si no hay ninguna marcada) y cuerpo técnico que va al partido
+    const jugadoras = F.lista.filter((f) => !esStaff(f));
+    const conv = jugadoras.filter((f) => f.convocada);
+    const staff = F.lista.filter((f) => esStaff(f) && f.convocada);
     const A = F.arbitro;
-    A.visibles = [...(conv.length ? conv : F.lista)].sort(ordenArbitro);
+    A.visibles = [...(conv.length ? conv : jugadoras), ...staff].sort(ordenArbitro);
     if (idInicial && !A.visibles.some((f) => f.id === idInicial)) A.visibles = [...F.lista].sort(ordenArbitro);
     A.indice = Math.max(0, A.visibles.findIndex((f) => f.id === idInicial));
     A.modo = idInicial ? 'una' : 'cuadricula';
@@ -278,6 +320,11 @@
     F.wake = null;
   }
 
+  // Dorsal y nombre para jugadoras; cargo y nombre para el cuerpo técnico
+  const etiquetaArbitro = (f) => (esStaff(f)
+    ? `${esc(f.nombre || 'Sin nombre')} <i class="a-cargo">${esc(CARGOS[f.cargo] || 'Cuerpo técnico')}</i>`
+    : `<b>${esc(nHoy(f) || '–')}</b> ${esc(f.nombre || 'Sin nombre')}${f.titular ? ' <em>Titular</em>' : ''}`);
+
   function pintarArbitro() {
     const A = F.arbitro;
     const total = A.visibles.length;
@@ -286,14 +333,17 @@
     const cuerpo = $('#aCuerpo');
     if (A.modo === 'cuadricula') {
       cuerpo.className = 'a-cuadricula';
-      const hayTitulares = A.visibles.some((f) => f.titular);
+      const hayTitulares = A.visibles.some((f) => f.titular && !esStaff(f));
       cuerpo.innerHTML = A.visibles.map((f, i) => {
-        const separador = hayTitulares && i > 0 && A.visibles[i - 1].titular && !f.titular ? '<h3 class="a-grupo">Suplentes</h3>' : '';
-        const cabecera = hayTitulares && i === 0 ? '<h3 class="a-grupo">Titulares</h3>' : '';
-        return `${cabecera}${separador}
+        const ant = A.visibles[i - 1];
+        let grupo = '';
+        if (esStaff(f) && (!ant || !esStaff(ant))) grupo = '<h3 class="a-grupo">Cuerpo técnico</h3>';
+        else if (!esStaff(f) && hayTitulares && i === 0) grupo = '<h3 class="a-grupo">Titulares</h3>';
+        else if (!esStaff(f) && hayTitulares && ant?.titular && !f.titular) grupo = '<h3 class="a-grupo">Suplentes</h3>';
+        return `${grupo}
         <button class="a-mini" data-i="${i}">
           <img src="${urlDe(f)}" alt="Ficha ${esc(f.nombre)}">
-          <span><b>${esc(nHoy(f) || '–')}</b> ${esc(f.nombre || 'Sin nombre')}${f.titular ? '<em>Titular</em>' : ''}</span>
+          <span>${etiquetaArbitro(f)}</span>
         </button>`;
       }).join('');
     } else {
@@ -303,7 +353,7 @@
         <div class="a-imagen"><img src="${urlDe(f)}" alt="Ficha ${esc(f.nombre)}"></div>
         <div class="a-pie">
           <button class="btn a-nav" id="aAnt" ${A.indice === 0 ? 'disabled' : ''} aria-label="Anterior">◀</button>
-          <div class="a-quien"><b>${esc(nHoy(f) || '–')}</b> ${esc(f.nombre || 'Sin nombre')}${f.titular ? ' <em>Titular</em>' : ''}<small>${A.indice + 1} de ${total}</small></div>
+          <div class="a-quien">${etiquetaArbitro(f)}<small>${A.indice + 1} de ${total}</small></div>
           <button class="btn a-nav" id="aSig" ${A.indice >= total - 1 ? 'disabled' : ''} aria-label="Siguiente">▶</button>
         </div>`;
       $('#aAnt').onclick = () => mover(-1);
@@ -398,8 +448,10 @@
     document.querySelectorAll('#pModo button').forEach((b) => b.classList.toggle('activo', b.dataset.modo === P.modo));
     pintarReloj();
 
-    const conv = F.lista.filter((f) => f.convocada);
-    const jugadoras = [...(conv.length ? conv : F.lista)].sort(ordenArbitro);
+    // Solo jugadoras pueden marcar (el cuerpo técnico no sale en la lista)
+    const todasJug = F.lista.filter((f) => !esStaff(f));
+    const conv = todasJug.filter((f) => f.convocada);
+    const jugadoras = [...(conv.length ? conv : todasJug)].sort(ordenArbitro);
     const golesDe = (id) => P.eventos.filter((e) => e.tipo === 'gol' && e.fichaId === id).length;
     $('#pGoleadoras').innerHTML = jugadoras.length
       ? jugadoras.map((f) => {

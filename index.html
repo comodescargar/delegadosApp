@@ -135,6 +135,10 @@
   .f-chip:has(input:checked) { border-color: var(--acento); color: #86efac; }
   .f-chip:has(input:disabled) { opacity: .45; }
   .f-borrar { align-self: flex-start; background: none; border: 1px solid transparent; color: var(--suave); font-size: 12px; padding: 2px 6px; border-radius: 6px; cursor: pointer; }
+  .f-grupo { grid-column: 1 / -1; margin: 10px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--suave); }
+  .f-ficha.staff .f-hoy-et { color: #93c5fd; }
+  .f-cargo { background: var(--fondo); border: 1px solid var(--borde); border-radius: 8px; padding: 6px 8px; font-weight: 600; }
+  .a-cargo { font-style: normal; font-size: 12px; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: #172554; color: #bfdbfe; border: 1px solid #1e3a8a; }
   .f-vacio { grid-column: 1 / -1; text-align: center; padding: 36px 16px; border: 1px dashed var(--borde); border-radius: 12px; color: var(--suave); }
   .f-vacio strong { color: var(--texto); font-size: 16px; }
 
@@ -333,8 +337,12 @@
         <h1>Fichas</h1>
         <p class="nota">Las fotos se guardan solo en este móvil y no se suben a ningún sitio. Si borras los datos del navegador se pierden: conserva las originales en la galería.</p>
       </div>
-      <label class="btn primario grande" for="fFotos">＋ Añadir fichas</label>
+      <div class="barra-acc">
+        <label class="btn primario grande" for="fFotos">＋ Añadir fichas</label>
+        <label class="btn grande" for="fFotosStaff">＋ Cuerpo técnico</label>
+      </div>
       <input type="file" id="fFotos" accept="image/*" multiple hidden>
+      <input type="file" id="fFotosStaff" accept="image/*" multiple hidden>
     </div>
     <div class="f-nube" id="fNube" hidden></div>
     <div class="aviso-bd" id="fAvisoBD" hidden>Este navegador no deja guardar datos (¿ventana privada?). Las fichas se perderán al cerrar la página.</div>

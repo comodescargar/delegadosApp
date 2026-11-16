@@ -27,16 +27,21 @@ async function iniciar() {
   $('#titulo').textContent = p.rival ? `${p.equipo} · ${p.rival}` : p.equipo;
   $('#sub').textContent = [fecha, `${data.length} ${data.length === 1 ? 'convocada' : 'convocadas'}`].filter(Boolean).join(' · ');
 
-  const tarjeta = (f, i) => `<button class="ficha" data-i="${i}">
+  const CARGOS = { entrenador: 'Entrenador/a', segundo: '2º entrenador/a', delegado: 'Delegado/a', practicas: 'Entrenador/a en prácticas', auxiliar: 'Auxiliar' };
+  const esStaff = (f) => f.tipo === 'staff';
+  const tarjeta = (f) => `<button class="ficha" data-i="${data.indexOf(f)}">
       ${f.foto_url ? `<img src="${esc(f.foto_url)}" alt="Ficha de ${esc(f.nombre)}" loading="lazy">` : '<div class="sin"></div>'}
-      <span><b class="dorsal">${esc(f.dorsal || '–')}</b>${esc(f.nombre)}</span></button>`;
-  const titulares = data.filter((f) => f.titular);
-  const suplentes = data.filter((f) => !f.titular);
-  const idx = (f) => data.indexOf(f);
-  $('#contenido').innerHTML = titulares.length
-    ? `<h2>Titulares</h2><div class="rejilla">${titulares.map((f) => tarjeta(f, idx(f))).join('')}</div>
-       ${suplentes.length ? `<h2>Suplentes</h2><div class="rejilla">${suplentes.map((f) => tarjeta(f, idx(f))).join('')}</div>` : ''}`
-    : `<div class="rejilla">${data.map(tarjeta).join('')}</div>`;
+      <span>${esStaff(f) ? `${esc(f.nombre)}<i class="cargo">${esc(CARGOS[f.cargo] || 'Cuerpo técnico')}</i>` : `<b class="dorsal">${esc(f.dorsal || '–')}</b>${esc(f.nombre)}`}</span></button>`;
+  const bloque = (titulo, lista) => (lista.length ? `${titulo ? `<h2>${titulo}</h2>` : ''}<div class="rejilla">${lista.map(tarjeta).join('')}</div>` : '');
+  const jugadoras = data.filter((f) => !esStaff(f));
+  const staff = data.filter(esStaff);
+  const titulares = jugadoras.filter((f) => f.titular);
+  $('#contenido').innerHTML = (titulares.length
+    ? bloque('Titulares', titulares) + bloque('Suplentes', jugadoras.filter((f) => !f.titular))
+    : bloque(staff.length ? 'Jugadoras' : '', jugadoras))
+    + bloque('Cuerpo técnico', staff);
+  $('#sub').textContent = [fecha, `${jugadoras.length} ${jugadoras.length === 1 ? 'convocada' : 'convocadas'}`,
+    staff.length ? `${staff.length} de cuerpo técnico` : ''].filter(Boolean).join(' · ');
 
   $('#contenido').addEventListener('click', (e) => {
     const b = e.target.closest('[data-i]');
@@ -44,7 +49,7 @@ async function iniciar() {
     const f = data[Number(b.dataset.i)];
     if (!f.foto_url) return;
     $('#grandeImg').src = f.foto_url;
-    $('#grandeTxt').textContent = `${f.dorsal || '–'} · ${f.nombre}`;
+    $('#grandeTxt').textContent = esStaff(f) ? `${f.nombre} · ${CARGOS[f.cargo] || 'Cuerpo técnico'}` : `${f.dorsal || '–'} · ${f.nombre}`;
     $('#grande').hidden = false;
   });
   $('#cerrar').addEventListener('click', () => { $('#grande').hidden = true; });
