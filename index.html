@@ -389,7 +389,7 @@
     </div>
     <div id="fLista" class="flista"></div>
     <details class="f-pasar" id="fPasar">
-      <summary>Pasar fichas a otro móvil o a la app del club</summary>
+      <summary>Pasar fichas y copias de seguridad</summary>
       <p class="nota">1. En la app donde están las fichas, pulsa <strong>«Copiar fichas»</strong> y luego «Copiar al portapapeles».
         2. En la otra app (con sesión iniciada y el equipo elegido), pulsa <strong>«Pegar fichas»</strong>.</p>
       <div class="barra-acc">
@@ -397,6 +397,13 @@
         <button class="btn" id="fPegar">Pegar fichas</button>
       </div>
       <div id="fPasarPanel" class="f-pasar-panel" hidden></div>
+      <p class="nota">También puedes guardar todas las fichas (con fotos) en un archivo y cargarlo después en cualquier móvil.
+        Guárdalo en un sitio privado: lleva fotos de menores.</p>
+      <div class="barra-acc">
+        <button class="btn" id="fGuardarCopia">Guardar copia en un archivo</button>
+        <button class="btn" id="fCargarCopia">Cargar copia</button>
+        <input type="file" id="fArchivoCopia" accept=".json,application/json" hidden>
+      </div>
     </details>
   </div>
 </section>

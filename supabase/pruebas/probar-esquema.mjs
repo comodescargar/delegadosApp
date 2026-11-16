@@ -172,6 +172,20 @@ await filas("update enlaces_arbitro set valido_hasta = now() + interval '1 hour'
 await como(null);
 comprobar((await filas('select * from public.fichas_arbitro($1)', [enlace.token])).length === 0, 'con el enlace revocado no ve nada');
 
+console.log('\n7. Fin de temporada');
+await como(U.delegada);
+comprobar(await falla('select public.limpiar_jugadoras_sin_ficha($1)', [club.id]), 'la delegada NO puede limpiar las jugadoras del club');
+await como(U.admin);
+await filas("insert into jugadoras (club_id, nombre) values ($1, 'Sin ficha')", [club.id]);
+comprobar((await filas('select public.limpiar_jugadoras_sin_ficha($1) n', [club.id]))[0].n === 1, 'borra solo la jugadora que no tiene ficha');
+comprobar((await filas("select count(*)::int n from jugadoras where nombre = 'Lucía'"))[0].n === 1, 'Lucía sigue (tiene ficha)');
+await filas('delete from partidos where equipo_id = $1', [alevin.id]);
+await filas('delete from fichas where equipo_id = $1', [alevin.id]);
+comprobar((await filas('select count(*)::int n from eventos'))[0].n === 0 && (await filas('select count(*)::int n from convocatorias'))[0].n === 0,
+  'al borrar los partidos del equipo se borran convocatorias y eventos');
+comprobar((await filas('select public.limpiar_jugadoras_sin_ficha($1) n', [club.id]))[0].n >= 2, 'después borra los nombres de las jugadoras del equipo');
+comprobar((await filas('select count(*)::int n from jugadoras'))[0].n === 0, 'no queda ningún nombre de jugadora');
+
 await db.exec('reset role');
 console.log(`\n${ok} comprobaciones correctas, ${fallos} fallos`);
 process.exit(fallos ? 1 : 0);

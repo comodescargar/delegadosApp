@@ -153,6 +153,10 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
     const ultimo = pa.data[0] || null;
     const conv = {};
     let eventos = null;
+    if (!ultimo && P.partidoId) {
+      // Los partidos del equipo se han borrado (fin de temporada)
+      Object.assign(P, { partidoId: null, parte: 1, acumulado: 0, desde: null, eventos: [], enlaceArbitro: null, duraciones: [] });
+    }
     if (ultimo) {
       // Si otro delegado ha empezado un partido más reciente, se pasa a ese
       if (P.partidoId !== ultimo.id) {
@@ -193,6 +197,9 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
         })());
       } else if (r.foto_path) {
         f.fotoPath = r.foto_path;
+      } else if (f.fotoPath && !cola.fichas[r.id]) {
+        // Otro delegado ha borrado las fotos (fin de temporada): también fuera de este móvil
+        f.imagen = null; f.fotoPath = null; f.huella = null; FA.olvidarImagen(f.id);
       }
       locales[r.id] = f;
     }

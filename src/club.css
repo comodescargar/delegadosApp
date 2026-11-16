@@ -35,3 +35,11 @@
 .f-nube-qr img { display: block; border-radius: 8px; background: #fff; }
 .f-nube-enlace-txt { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 8px; }
 .f-nube-enlace-txt input { width: 100%; }
+
+/* Copia de seguridad y fin de temporada */
+.club-fin { margin: 18px 0; padding: 12px 14px; border: 1px solid var(--borde); border-radius: 14px; background: var(--panel); }
+.club-fin summary { cursor: pointer; font-weight: 700; }
+.club-fin-paso { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px 0; border-top: 1px solid var(--borde); }
+.club-fin-paso:first-of-type { margin-top: 10px; }
+.club-fin-paso .nota { margin: 0; }
+.club-fin-paso .entrada { max-width: 320px; width: 100%; }

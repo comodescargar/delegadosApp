@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import QRCode from 'qrcode';
 import { crearSincronizador } from './sync.js';
 import { crearTemporada } from './temporada.js';
+import { crearFinTemporada } from './fin-temporada.js';
 import './pwa.js';
 import './club.css';
 
@@ -153,6 +154,17 @@ function iniciar(sb) {
     equipoActivo: () => equipoSinc,
     partidoActualId: () => window.FichasApp?.partido()?.partidoId || null,
   });
+  // Copia de seguridad y fin de temporada (en la sección Club)
+  let pausado = null;
+  const fin = crearFinTemporada(sb, {
+    aviso,
+    equipoActivo: () => equipoSinc,
+    pendientes: () => sinc?.pendientes() || 0,
+    // Durante el borrado no se sincroniza (si no, se volverían a subir las fichas del móvil)
+    async pararSinc() { pausado = equipoSinc; await activarEquipo(null); },
+    async reanudarSinc() { const eq = pausado; pausado = null; if (eq && S.sesion) await activarEquipo(eq); },
+  });
+
   const guardada = window.seccionGuardada?.();
   if (guardada === 'club' || guardada === 'temporada') window.mostrarSeccion(guardada);
 
@@ -221,8 +233,13 @@ function iniciar(sb) {
       h += '<p class="nota">Las fichas, la convocatoria y los goles del <strong>equipo activo</strong> se comparten con el resto de delegados y entrenadores del equipo. Sin cobertura se guardan en el móvil y se suben al volver la conexión.</p>';
     }
 
+    const eqActivo = S.equipos.find((e) => e.id === activo);
+    if (eqActivo) h += fin.html(eqActivo, S.adminDe.includes(eqActivo.club_id));
+
     for (const clubId of S.adminDe) h += pintarAdmin(clubId);
+    const finAbierto = cuerpo.querySelector('#clubFin')?.open;
     cuerpo.innerHTML = h;
+    if (finAbierto && cuerpo.querySelector('#clubFin')) cuerpo.querySelector('#clubFin').open = true;
   }
 
   function pintarAdmin(clubId) {
@@ -316,6 +333,7 @@ function iniciar(sb) {
 
   cuerpo.addEventListener('click', async (e) => {
     const t = e.target;
+    if (t.closest('[data-fin]')) { await fin.manejar(e); return; }
     if (t.id === 'clubSalir') { await sb.auth.signOut(); return; }
     if (t.id === 'accesoVerificar') {
       const token = cuerpo.querySelector('#accesoCodigo').value.replace(/\D/g, '');

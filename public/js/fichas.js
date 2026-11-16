@@ -740,10 +740,7 @@
     }
   }
 
-  $('#fCopiar').addEventListener('click', async () => {
-    if (!F.lista.length) { aviso('No hay fichas que copiar en esta app.'); return; }
-    panelPasar.hidden = false;
-    panelPasar.innerHTML = `<p>Preparando ${F.lista.length} fichas…</p>`;
+  async function fichasParaCopia() {
     const fichas = [];
     for (const f of F.lista) {
       fichas.push({
@@ -751,6 +748,14 @@
         nombre: f.nombre || '', dorsal: esStaff(f) ? '' : f.dorsal || '', imagen: f.imagen ? await fotoATexto(f.imagen) : null,
       });
     }
+    return fichas;
+  }
+
+  $('#fCopiar').addEventListener('click', async () => {
+    if (!F.lista.length) { aviso('No hay fichas que copiar en esta app.'); return; }
+    panelPasar.hidden = false;
+    panelPasar.innerHTML = `<p>Preparando ${F.lista.length} fichas…</p>`;
+    const fichas = await fichasParaCopia();
     textoCopia = PREFIJO + JSON.stringify({ v: 1, fichas });
     const tam = textoCopia.length > 1048576 ? `${(textoCopia.length / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(textoCopia.length / 1024))} KB`;
     panelPasar.innerHTML = `<p>Listas <strong>${fichas.length} fichas</strong> (${tam}). Pulsa el botón y después, en la otra app, «Pegar fichas».</p>
@@ -779,10 +784,16 @@
 
   async function importarFichas(texto) {
     texto = (texto || '').trim();
-    const i = texto.indexOf(PREFIJO);
-    if (i < 0) { aviso('Ese texto no son fichas copiadas desde la app. Vuelve a pulsar «Copiar fichas» en la otra app.'); return; }
     let datos;
-    try { datos = JSON.parse(texto.slice(i + PREFIJO.length)); } catch { aviso('El texto está incompleto. Vuelve a copiarlo en la otra app.'); return; }
+    if (texto.startsWith('{')) {
+      // Archivo de copia de seguridad
+      try { datos = JSON.parse(texto); } catch { datos = null; }
+      if (datos?.formato !== FORMATO_COPIA) { aviso('Ese archivo no es una copia de seguridad de la app.'); return; }
+    } else {
+      const i = texto.indexOf(PREFIJO);
+      if (i < 0) { aviso('Ese texto no son fichas copiadas desde la app. Vuelve a pulsar «Copiar fichas» en la otra app.'); return; }
+      try { datos = JSON.parse(texto.slice(i + PREFIJO.length)); } catch { aviso('El texto está incompleto. Vuelve a copiarlo en la otra app.'); return; }
+    }
     // Una ficha se considera repetida si ya se pegó la misma foto (huella de la imagen).
     // Si no hay foto, solo si coinciden nombre y dorsal/cargo y el nombre no está vacío.
     const huellaDe = (d) => (d.imagen ? `img:${huella(d.imagen)}` : null);
@@ -854,6 +865,54 @@
     }
   });
 
+  // ------------------------------------------------------------------ Copia de seguridad en un archivo
+  // Fichas con sus fotos, el partido en curso y (con sesión) el historial de la temporada.
+  // Al cargarla se añaden las fichas que falten; el historial queda en el archivo como registro.
+  const FORMATO_COPIA = 'delegado-copia';
+  let proveedorHistorial = null;
+  const nombreArchivo = (txt) => (txt || 'equipo').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'equipo';
+
+  async function crearCopia() {
+    const historial = proveedorHistorial ? await proveedorHistorial() : null;
+    return {
+      formato: FORMATO_COPIA, v: 1, creada: new Date().toISOString(),
+      equipo: CTX.equipoId ? CTX.equipoNombre : nombreEquipo(),
+      fichas: await fichasParaCopia(),
+      partidoEnCurso: { rival: P.rival, parte: P.parte, duracion: P.duracion, eventos: P.eventos },
+      ...(historial ? { historial } : {}),
+    };
+  }
+
+  async function descargarCopia() {
+    const copia = await crearCopia();
+    const blob = new Blob([JSON.stringify(copia)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `copia-${nombreArchivo(copia.equipo)}-${copia.creada.slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    const tam = blob.size > 1048576 ? `${(blob.size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(blob.size / 1024))} KB`;
+    aviso(`Copia descargada (${copia.fichas.length} fichas${copia.historial ? `, ${copia.historial.partidos.length} partidos` : ''}, ${tam}). Guárdala en un sitio privado: lleva fotos de menores.`);
+    return copia;
+  }
+
+  $('#fGuardarCopia').addEventListener('click', async (e) => {
+    if (!F.lista.length) { aviso('No hay fichas que guardar.'); return; }
+    e.target.disabled = true;
+    try { await descargarCopia(); } catch (err) { aviso(`No se ha podido crear la copia: ${err.message}`); }
+    e.target.disabled = false;
+  });
+  $('#fCargarCopia').addEventListener('click', () => $('#fArchivoCopia').click());
+  $('#fArchivoCopia').addEventListener('change', async (e) => {
+    const archivo = e.target.files?.[0];
+    e.target.value = '';
+    if (!archivo) return;
+    await importarFichas(await archivo.text());
+  });
+
   // ------------------------------------------------------------------ API para la sincronización (src/sync.js)
   let marcarListo;
   window.FichasApp = {
@@ -881,6 +940,27 @@
       return true;
     },
     partido: () => P,
+    // Copia de seguridad y fin de temporada (src/fin-temporada.js)
+    descargarCopia,
+    usarHistorial(fn) { proveedorHistorial = fn; },
+    // Borra del móvil las fichas y el partido de un equipo (o de todos con null)
+    async borrarDelMovil(equipoId) {
+      for (const f of await todas()) {
+        if (equipoId === null || f.equipoId === equipoId) { await borrarFicha(f.id); olvidarImagen(f.id); }
+      }
+      Object.keys(localStorage)
+        .filter((k) => (equipoId === null ? /^delegado\.(partido|cola)/.test(k) : /^delegado\.(partido|cola)\./.test(k) && k.endsWith('.' + equipoId)))
+        .forEach((k) => { try { localStorage.removeItem(k); } catch { /* nada */ } });
+      cargarP();
+      await cargar();
+    },
+    // Quita las fotos guardadas en el móvil de las fichas de un equipo
+    async quitarFotosDelMovil(equipoId) {
+      for (const f of await todas()) {
+        if (f.equipoId === equipoId && f.imagen) { f.imagen = null; f.fotoPath = null; f.huella = null; await guardarFicha(f); olvidarImagen(f.id); }
+      }
+      await cargar();
+    },
     // Segundos en el campo de cada jugadora en el partido actual: { fichaId: segundos }
     segundosJugados: () => (relojUsado() ? estadoCampo().seg : null),
     guardarPartido() { guardarP(); $('#fRival').value = P.rival || ''; pintarPartido(); },
