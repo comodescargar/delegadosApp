@@ -16,6 +16,16 @@
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "geolocation=(), microphone=()"
 
+# El service worker y el manifiesto se revisan siempre (si no, las versiones nuevas tardarían en llegar)
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "no-cache"
+
 # El enlace del árbitro (/a/<código>) abre la página del árbitro
 [[redirects]]
   from = "/a/*"

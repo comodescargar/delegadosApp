@@ -10,6 +10,17 @@
 .club-fila { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 10px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--borde); }
 .club-fila span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 
+/* Avisos de instalar la app y de versión nueva */
+.pwa-barra {
+  position: fixed; z-index: 48; left: 50%; transform: translateX(-50%);
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  width: min(560px, calc(100% - 24px));
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  padding: 10px 12px; border-radius: 14px; background: #0f1b33; border: 1px solid #2f4878;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .45); font-size: 14px;
+}
+.pwa-barra span { flex: 1 1 220px; min-width: 0; }
+
 /* Panel de sincronización en la pestaña Fichas */
 .f-nube { display: flex; flex-direction: column; gap: 10px; background: var(--panel2); border: 1px solid var(--borde); border-radius: 12px; padding: 12px; }
 .f-nube-cab { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }

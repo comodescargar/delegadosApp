@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import QRCode from 'qrcode';
 import { crearSincronizador } from './sync.js';
 import { crearTemporada } from './temporada.js';
+import './pwa.js';
 import './club.css';
 
 const URL_SB = import.meta.env.VITE_SUPABASE_URL;
