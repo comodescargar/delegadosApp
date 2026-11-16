@@ -1,0 +1,11 @@
+/* Sección Club (solo con Supabase configurado) */
+.club-form { display: flex; flex-direction: column; gap: 10px; background: var(--panel2); border: 1px solid var(--borde); border-radius: 12px; padding: 14px; }
+.club-form p { margin: 0; }
+.club-campos { display: flex; gap: 8px; flex-wrap: wrap; }
+.club-campos > * { flex: 1 1 160px; min-width: 0; }
+.club-equipos { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.club-equipo { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--panel2); border: 1px solid var(--borde); border-radius: 12px; padding: 12px; }
+.club-equipo.activo { border-color: var(--acento); }
+.club-lista { display: flex; flex-direction: column; gap: 6px; }
+.club-fila { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 10px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--borde); }
+.club-fila span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }

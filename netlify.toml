@@ -1,0 +1,23 @@
+# Netlify: compila con Vite y publica la carpeta dist.
+# Las variables VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY se configuran en
+# Netlify → Site configuration → Environment variables (no en este archivo).
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Cabeceras de seguridad básicas para todas las páginas
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=()"
+
+# El enlace del árbitro (/a/<código>) no debe aparecer en buscadores
+[[headers]]
+  for = "/a/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"

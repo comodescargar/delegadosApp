@@ -1,0 +1,20 @@
+{
+  "name": "delegados-app",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test:bd": "node supabase/pruebas/probar-esquema.mjs",
+    "publicar:artifact": "node scripts/publicar-artifact.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
+    "vite": "^8.3.8"
+  }
+}
