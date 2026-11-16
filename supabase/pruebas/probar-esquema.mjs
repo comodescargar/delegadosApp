@@ -3,7 +3,7 @@
 // Simula lo mínimo de Supabase (roles anon/authenticated, auth.uid(), auth.jwt(), storage)
 // y comprueba qué puede ver y hacer cada tipo de usuario.
 import { PGlite } from '@electric-sql/pglite';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -36,7 +36,8 @@ await db.exec(`
   grant select, insert, update, delete on storage.objects to authenticated;
 `);
 
-await db.exec(readFileSync(join(aqui, '..', 'migrations', '0001_esquema.sql'), 'utf8'));
+const carpeta = join(aqui, '..', 'migrations');
+for (const m of readdirSync(carpeta).filter((f) => f.endsWith('.sql')).sort()) await db.exec(readFileSync(join(carpeta, m), 'utf8'));
 await db.exec(readFileSync(join(aqui, '..', 'semilla.sql'), 'utf8').replace('cambia-esto@ejemplo.com', 'admin@prueba.es'));
 
 // --- Usuarios de prueba
@@ -86,7 +87,8 @@ comprobar((await filas('select public.aceptar_invitaciones() n'))[0].n === 1, 'a
 const equiposDelegada = await filas('select nombre from equipos');
 comprobar(equiposDelegada.length === 1 && equiposDelegada[0].nombre === 'Alevín A', 'solo ve el Alevín A');
 comprobar((await filas('select count(*)::int n from invitaciones'))[0].n === 0, 'no ve las invitaciones del club');
-const [jug] = await filas("insert into jugadoras (club_id, nombre) values ($1, 'Lucía') returning id", [club.id]);
+const [jug] = await filas("insert into jugadoras (club_id, nombre) values ($1, 'Lucia') returning id", [club.id]);
+comprobar((await filas("update jugadoras set nombre = 'Lucía' where id = $1 returning id", [jug.id])).length === 1, 'corrige el nombre de una jugadora recién creada');
 const [ficha] = await filas("insert into fichas (equipo_id, jugadora_id, dorsal, foto_path) values ($1, $2, '7', $3) returning id", [alevin.id, jug.id, `${alevin.id}/lucia.jpg`]);
 comprobar(!!ficha, 'crea una jugadora y su ficha en su equipo');
 comprobar(await falla("insert into fichas (equipo_id, jugadora_id, dorsal) values ($1, $2, '9')", [infantil.id, jug.id]), 'NO puede crear fichas en otro equipo');
@@ -97,7 +99,7 @@ await filas("insert into convocatorias (partido_id, ficha_id, dorsal_partido, ti
 await filas("insert into eventos (partido_id, tipo, ficha_id, minuto) values ($1, 'gol', $2, 12)", [partido.id, ficha.id]);
 await filas("insert into eventos (partido_id, tipo, minuto) values ($1, 'gol_rival', 20)", [partido.id]);
 comprobar((await filas('select count(*)::int n from eventos'))[0].n === 2, 'crea partido, convocatoria y goles');
-const [enlace] = await filas('insert into enlaces_arbitro (partido_id) values ($1) returning token', [partido.id]);
+const [enlace] = await filas('insert into enlaces_arbitro (partido_id, fotos) values ($1, $2) returning token', [partido.id, JSON.stringify({ [ficha.id]: 'https://firmada.example/lucia.jpg' })]);
 comprobar(enlace?.token?.length === 64, 'crea un enlace para el árbitro con código de 64 caracteres');
 await filas("insert into storage.objects (bucket_id, name) values ('fichas', $1)", [`${alevin.id}/lucia.jpg`]);
 comprobar(await falla("insert into storage.objects (bucket_id, name) values ('fichas', $1)", [`${infantil.id}/intrusa.jpg`]), 'NO puede subir fotos a la carpeta de otro equipo');
@@ -139,6 +141,7 @@ console.log('\n6. Árbitro (sin sesión)');
 await como(null);
 const arb = await filas('select * from public.fichas_arbitro($1)', [enlace.token]);
 comprobar(arb.length === 1 && arb[0].dorsal === '14' && arb[0].nombre === 'Lucía' && arb[0].titular === true, 've la convocada con el dorsal del día');
+comprobar(arb[0]?.foto_url === 'https://firmada.example/lucia.jpg', 've la foto con el enlace temporal guardado');
 comprobar((await filas('select * from public.fichas_arbitro($1)', ['codigo-inventado'])).length === 0, 'con un código inventado no ve nada');
 comprobar(await falla('select * from fichas'), 'NO puede leer las tablas directamente');
 comprobar(await falla('select public.aceptar_invitaciones()'), 'NO puede aceptar invitaciones');

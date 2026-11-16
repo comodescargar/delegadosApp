@@ -1,12 +1,21 @@
 'use strict';
 /*
- * Fichas de jugadoras/es: fotos de las licencias guardadas SOLO en este dispositivo (IndexedDB).
- * No se envía nada a ningún servidor. Modo árbitro a pantalla completa para enseñar las fichas.
+ * Fichas de jugadoras/es y partido (marcador, reloj y goles).
+ * Todo se guarda primero en este dispositivo (IndexedDB y localStorage), así funciona sin cobertura.
+ * - Modo local (sin sesión): fichas sin equipo, solo en este móvil.
+ * - Modo nube: la app de Supabase (src/sync.js) llama a FichasApp.usarEquipo(equipo, sincronizador);
+ *   se muestran las fichas de ese equipo y cada cambio se avisa al sincronizador para subirlo.
  */
 (function () {
   const $ = (s) => document.querySelector(s);
   const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const aviso = (m) => (window.toast ? window.toast(m) : console.log(m));
+  const uuid = () => (crypto.randomUUID ? crypto.randomUUID()
+    : '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c) => (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)));
+
+  // Equipo activo (null = modo local) y sincronizador con la nube (null = sin sincronizar)
+  const CTX = { equipoId: null, equipoNombre: '', sinc: null };
+  const avisarSinc = (metodo, ...args) => { try { CTX.sinc?.[metodo]?.(...args); } catch (e) { console.error(e); } };
 
   // ------------------------------------------------------------------ Almacenamiento local
   const BD = { db: null, memoria: new Map(), ok: false };
@@ -66,9 +75,15 @@
   }
 
   const urls = new Map();
+  // Si la foto aún no se ha descargado (sin conexión), se muestra un hueco gris
+  const SIN_FOTO = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 3"><rect width="4" height="3" fill="#334155"/></svg>');
   function urlDe(f) {
+    if (!f.imagen) return SIN_FOTO;
     if (!urls.has(f.id)) urls.set(f.id, URL.createObjectURL(f.imagen));
     return urls.get(f.id);
+  }
+  function olvidarImagen(id) {
+    if (urls.has(id)) { URL.revokeObjectURL(urls.get(id)); urls.delete(id); }
   }
 
   // ------------------------------------------------------------------ Estado
@@ -92,7 +107,7 @@
   };
 
   async function cargar() {
-    F.lista = (await todas()).sort(ordenar);
+    F.lista = (await todas()).filter((f) => (f.equipoId || null) === CTX.equipoId).sort(ordenar);
     pintar();
   }
 
@@ -142,6 +157,7 @@
     f[campo] = e.target.type === 'checkbox' ? e.target.checked : e.target.value.trim();
     if (campo === 'convocada' && !f.convocada) f.titular = false;
     await guardarFicha(f);
+    avisarSinc('fichaCambiada', f, campo);
     if (campo === 'dorsal') F.lista.sort(ordenar);
     if (campo !== 'nombre') pintar();
   });
@@ -158,11 +174,13 @@
       return;
     }
     const id = b.dataset.borrar;
+    const ficha = F.lista.find((x) => x.id === id);
     await borrarFicha(id);
-    if (urls.has(id)) { URL.revokeObjectURL(urls.get(id)); urls.delete(id); }
+    olvidarImagen(id);
     F.lista = F.lista.filter((x) => x.id !== id);
+    avisarSinc('fichaBorrada', ficha);
     pintar();
-    aviso('Ficha borrada de este móvil.');
+    aviso(CTX.sinc ? 'Ficha borrada del equipo.' : 'Ficha borrada de este móvil.');
   });
 
   $('#fFotos').addEventListener('change', async (e) => {
@@ -172,9 +190,10 @@
     aviso(`Guardando ${archivos.length} ${archivos.length === 1 ? 'ficha' : 'fichas'}…`);
     let n = 0;
     for (const a of archivos) {
-      const f = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, nombre: '', dorsal: '', dorsalPartido: '', convocada: true, titular: false, creada: Date.now() + n++, imagen: await comprimir(a) };
+      const f = { id: uuid(), equipoId: CTX.equipoId, nombre: '', dorsal: '', dorsalPartido: '', convocada: true, titular: false, creada: Date.now() + n++, imagen: await comprimir(a) };
       await guardarFicha(f);
       F.lista.push(f);
+      avisarSinc('fichaCambiada', f, 'nueva');
     }
     F.lista.sort(ordenar);
     pintar();
@@ -183,32 +202,53 @@
 
   $('#fMarcar').addEventListener('click', async () => {
     const todasMarcadas = F.lista.every((f) => f.convocada);
-    for (const f of F.lista) { f.convocada = !todasMarcadas; await guardarFicha(f); }
-    pintar();
-  });
-
-  // Nuevo partido: borra dorsales del día y titulares, y vuelve a convocar a todas
-  $('#fNuevoPartido').addEventListener('click', async (e) => {
-    const b = e.currentTarget;
-    if (!b.classList.contains('confirmar')) {
-      b.classList.add('confirmar');
-      b.textContent = '¿Empezar de cero? Toca otra vez';
-      setTimeout(() => { b.classList.remove('confirmar'); b.textContent = 'Nuevo partido'; }, 3000);
-      return;
+    for (const f of F.lista) {
+      f.convocada = !todasMarcadas;
+      if (!f.convocada) f.titular = false;
+      await guardarFicha(f);
+      avisarSinc('fichaCambiada', f, 'convocada');
     }
-    b.classList.remove('confirmar');
-    b.textContent = 'Nuevo partido';
-    for (const f of F.lista) { f.dorsalPartido = ''; f.titular = false; f.convocada = true; await guardarFicha(f); }
-    $('#fRival').value = '';
-    escribirLS('delegado.fRival', '');
     pintar();
-    aviso('Listo para el nuevo partido: todas convocadas, sin titulares y con su dorsal habitual.');
   });
 
-  ['fEquipo', 'fRival'].forEach((id) => {
-    const i = $('#' + id);
-    i.value = leerLS('delegado.' + id, '');
-    i.addEventListener('input', () => escribirLS('delegado.' + id, i.value));
+  // Nuevo partido: goles y reloj a cero, dorsales del día y titulares borrados, todas convocadas.
+  // En modo nube, el siguiente cambio crea un partido nuevo en la base de datos (el anterior queda en el historial).
+  async function nuevoPartido() {
+    for (const f of F.lista) { f.dorsalPartido = ''; f.titular = false; f.convocada = true; await guardarFicha(f); }
+    Object.assign(P, { parte: 1, acumulado: 0, desde: null, eventos: [], rival: '', partidoId: null, enlaceArbitro: null });
+    relojEncendido(false);
+    guardarP();
+    $('#fRival').value = '';
+    $('#pResumenTexto').hidden = true;
+    avisarSinc('nuevoPartido');
+    pintar();
+    aviso('Nuevo partido: goles y reloj a cero, todas convocadas, sin titulares y con su dorsal habitual.');
+  }
+  function botonNuevoPartido(textoNormal) {
+    return async (e) => {
+      const b = e.currentTarget;
+      if (!b.classList.contains('confirmar')) {
+        b.classList.add('confirmar');
+        b.textContent = '¿Empezar de cero? Toca otra vez';
+        setTimeout(() => { b.classList.remove('confirmar'); b.textContent = textoNormal; }, 3000);
+        return;
+      }
+      b.classList.remove('confirmar');
+      b.textContent = textoNormal;
+      await nuevoPartido();
+    };
+  }
+  $('#fNuevoPartido').addEventListener('click', botonNuevoPartido('Nuevo partido'));
+
+  // Nombre del equipo: en modo nube es el del equipo activo; en modo local se escribe a mano
+  const fEquipo = $('#fEquipo');
+  fEquipo.value = leerLS('delegado.fEquipo', '');
+  fEquipo.addEventListener('input', () => { if (!CTX.equipoId) escribirLS('delegado.fEquipo', fEquipo.value); });
+  // Rival: forma parte del partido actual
+  $('#fRival').addEventListener('input', (e) => {
+    P.rival = e.target.value;
+    guardarP();
+    avisarSinc('partidoCambiado');
   });
 
   // ------------------------------------------------------------------ Modo árbitro
@@ -305,12 +345,20 @@
   });
 
   // ------------------------------------------------------------------ Partido: marcador, reloj y goles
-  const CLAVE_P = 'delegado.partido';
-  const P = (() => {
-    const base = { parte: 1, duracion: 25, modo: 'crono', acumulado: 0, desde: null, eventos: [] };
-    try { return { ...base, ...JSON.parse(leerLS(CLAVE_P, '{}')) }; } catch { return base; }
-  })();
-  const guardarP = () => escribirLS(CLAVE_P, JSON.stringify(P));
+  // Un partido por equipo (en modo local, uno solo). partidoId = id del partido en la nube.
+  const claveP = () => 'delegado.partido' + (CTX.equipoId ? '.' + CTX.equipoId : '');
+  let P = {};
+  function cargarP() {
+    const base = { parte: 1, duracion: 25, modo: 'crono', acumulado: 0, desde: null, eventos: [], rival: '', partidoId: null };
+    let guardado = {};
+    try { guardado = JSON.parse(leerLS(claveP(), '{}')) || {}; } catch { guardado = {}; }
+    // Versión 0: el rival se guardaba aparte
+    if (!CTX.equipoId && guardado.rival === undefined) guardado.rival = leerLS('delegado.fRival', '');
+    P = { ...base, ...guardado };
+    $('#fRival').value = P.rival || '';
+  }
+  const guardarP = () => escribirLS(claveP(), JSON.stringify(P));
+  cargarP();
   const msJugados = () => P.acumulado + (P.desde ? Date.now() - P.desde : 0);
   const mmss = (ms) => {
     const s = Math.floor(Math.abs(ms) / 1000);
@@ -372,8 +420,10 @@
   }
 
   function apuntar(ev) {
-    P.eventos.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, min: minutoActual(), parte: P.parte, ...ev });
+    const evento = { id: uuid(), min: minutoActual(), parte: P.parte, ...ev };
+    P.eventos.push(evento);
     guardarP();
+    avisarSinc('eventoNuevo', evento);
     pintarPartido();
     try { navigator.vibrate?.(60); } catch { /* opcional */ }
   }
@@ -398,6 +448,7 @@
     }
     P.eventos = P.eventos.filter((x) => x.id !== b.dataset.quitar);
     guardarP();
+    avisarSinc('eventoBorrado', b.dataset.quitar);
     pintarPartido();
   });
 
@@ -434,25 +485,13 @@
   });
   $('#pDuracion').addEventListener('change', (e) => {
     const v = parseInt(e.target.value, 10);
-    if (v > 0 && v <= 60) { P.duracion = v; guardarP(); pintarReloj(); } else e.target.value = P.duracion;
+    if (v > 0 && v <= 60) { P.duracion = v; guardarP(); avisarSinc('partidoCambiado'); pintarReloj(); } else e.target.value = P.duracion;
   });
   $('#pModo').addEventListener('click', (e) => {
     const m = e.target.dataset.modo;
     if (m) { P.modo = m; guardarP(); pintarPartido(); }
   });
-  $('#pTerminar').addEventListener('click', (e) => {
-    const b = e.currentTarget;
-    if (!b.classList.contains('confirmar')) {
-      b.classList.add('confirmar'); b.textContent = '¿Borrar goles y reloj? Toca otra vez';
-      setTimeout(() => { b.classList.remove('confirmar'); b.textContent = 'Empezar partido nuevo'; }, 3000);
-      return;
-    }
-    b.classList.remove('confirmar'); b.textContent = 'Empezar partido nuevo';
-    P.parte = 1; P.acumulado = 0; P.desde = null; P.eventos = []; relojEncendido(false);
-    guardarP(); pintarPartido();
-    $('#pResumenTexto').hidden = true;
-    aviso('Marcador y reloj a cero.');
-  });
+  $('#pTerminar').addEventListener('click', botonNuevoPartido('Empezar partido nuevo'));
 
   function textoResumen() {
     const nuestros = P.eventos.filter((e) => e.tipo === 'gol');
@@ -480,11 +519,42 @@
   setInterval(() => { if (!$('#appPartido').hidden) pintarReloj(); }, 500);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && P.desde) relojEncendido(true); });
 
+  // ------------------------------------------------------------------ API para la sincronización (src/sync.js)
+  let marcarListo;
+  window.FichasApp = {
+    listo: new Promise((r) => { marcarListo = r; }),
+    uuid,
+    equipoActivo: () => CTX.equipoId,
+    // Cambia de equipo (null = modo local) y de sincronizador
+    async usarEquipo(equipo, sinc) {
+      CTX.equipoId = equipo?.id || null;
+      CTX.equipoNombre = equipo?.nombre || '';
+      CTX.sinc = sinc || null;
+      fEquipo.readOnly = !!CTX.equipoId;
+      fEquipo.value = CTX.equipoId ? CTX.equipoNombre : leerLS('delegado.fEquipo', '');
+      cargarP();
+      await cargar();
+    },
+    todasLocales: todas,
+    guardarLocal: guardarFicha,
+    borrarLocal: borrarFicha,
+    olvidarImagen,
+    // Vuelve a leer las fichas del equipo activo; no repinta si se está escribiendo en una ficha
+    async recargar() {
+      if (document.activeElement?.closest?.('#fLista')) return false;
+      await cargar();
+      return true;
+    },
+    partido: () => P,
+    guardarPartido() { guardarP(); $('#fRival').value = P.rival || ''; pintarPartido(); },
+  };
+
   // ------------------------------------------------------------------ Inicio
   (async function iniciar() {
     await abrirBD();
     if (!BD.ok) $('#fAvisoBD').hidden = false;
     try { await navigator.storage?.persist?.(); } catch { /* opcional */ }
     await cargar();
+    marcarListo();
   })();
 })();

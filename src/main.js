@@ -1,6 +1,8 @@
 // Conexión con Supabase: acceso por email, equipos e invitaciones (sección «Club»).
 // Si no hay VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY, la app sigue en modo local (como la versión 0).
 import { createClient } from '@supabase/supabase-js';
+import QRCode from 'qrcode';
+import { crearSincronizador } from './sync.js';
 import './club.css';
 
 const URL_SB = import.meta.env.VITE_SUPABASE_URL;
@@ -22,6 +24,97 @@ if (URL_SB && CLAVE_SB) iniciar(createClient(URL_SB, CLAVE_SB));
 
 function iniciar(sb) {
   const S = { sesion: null, equipos: [], adminDe: [], clubes: {}, invitaciones: [], miembros: [], aceptadas: false };
+  let sinc = null;
+  let equipoSinc = null;
+
+  // ---------------------------------------------------------------- Equipo activo y sincronización
+  async function activarEquipo(eq) {
+    await window.FichasApp?.listo;
+    if ((eq?.id || null) === (equipoSinc?.id || null)) return;
+    sinc?.detener();
+    equipoSinc = eq || null;
+    sinc = eq ? crearSincronizador(sb, eq, { aviso, alCambiarEstado: pintarNube }) : null;
+    await window.FichasApp.usarEquipo(eq || null, sinc);
+    await pintarNube();
+    sinc?.sincronizar();
+  }
+
+  const panelNube = document.getElementById('fNube');
+  async function pintarNube() {
+    if (!sinc || !equipoSinc) { panelNube.hidden = true; panelNube.innerHTML = ''; return; }
+    panelNube.hidden = false;
+    const est = sinc.estado();
+    const soloMovil = (await sinc.fichasSoloMovil()).length;
+    const P = window.FichasApp.partido();
+    const enlace = P.enlaceArbitro && new Date(P.enlaceArbitro.validoHasta) > new Date() ? P.enlaceArbitro : null;
+    panelNube.innerHTML = `
+      <div class="f-nube-cab">
+        <div><strong>${esc(equipoSinc.nombre)}</strong> · fichas compartidas con el equipo</div>
+        <span class="f-nube-estado ${est.tipo}" role="status">${esc(est.texto)}</span>
+        <button class="btn" id="nubeSinc">Sincronizar</button>
+      </div>
+      ${soloMovil ? `<div class="f-nube-aviso">Tienes <strong>${soloMovil}</strong> ${soloMovil === 1 ? 'ficha guardada' : 'fichas guardadas'} solo en este móvil.
+        <button class="btn primario" id="nubeSubir">Subirlas a ${esc(equipoSinc.nombre)}</button></div>` : ''}
+      <div class="f-nube-arbitro">
+        <button class="btn primario" id="nubeEnlace">${enlace ? 'Crear un enlace nuevo para el árbitro' : 'Enlace para el árbitro'}</button>
+        <span class="nota">El árbitro lo abre sin cuenta y ve las convocadas con foto. Caduca en 8 horas.</span>
+      </div>
+      ${enlace ? enlaceHTML(`${location.origin}/a/${enlace.token}`, enlace.validoHasta) : ''}`;
+    const res = panelNube.querySelector('#nubeEnlaceRes');
+    if (res) dibujarQR(res);
+  }
+
+  function enlaceHTML(url, validoHasta) {
+    const hora = new Date(validoHasta).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    return `<div class="f-nube-enlace" id="nubeEnlaceRes" data-url="${esc(url)}">
+      <div class="f-nube-qr"></div>
+      <div class="f-nube-enlace-txt">
+        <input class="entrada" id="nubeEnlaceUrl" readonly value="${esc(url)}" aria-label="Enlace para el árbitro">
+        <div class="barra-acc">
+          <button class="btn" id="nubeCopiar">Copiar</button>
+          ${navigator.share ? '<button class="btn" id="nubeCompartir">Compartir</button>' : ''}
+          <span class="nota">Válido hasta las ${hora}. El árbitro puede escanear el código QR.</span>
+        </div>
+      </div>
+    </div>`;
+  }
+  async function dibujarQR(cont) {
+    try {
+      const src = await QRCode.toDataURL(cont.dataset.url, { margin: 1, width: 220 });
+      cont.querySelector('.f-nube-qr').innerHTML = `<img src="${src}" alt="Código QR del enlace para el árbitro" width="160" height="160">`;
+    } catch { /* sin QR, queda el enlace */ }
+  }
+
+  panelNube.addEventListener('click', async (e) => {
+    const id = e.target.id;
+    if (id === 'nubeSinc') { await sinc?.sincronizar(); pintarNube(); }
+    if (id === 'nubeSubir') {
+      e.target.disabled = true;
+      const n = await sinc.subirFichasDelMovil();
+      aviso(`${n} ${n === 1 ? 'ficha subida' : 'fichas subidas'} a ${equipoSinc.nombre}.`);
+      pintarNube();
+    }
+    if (id === 'nubeEnlace') {
+      e.target.disabled = true;
+      e.target.textContent = 'Creando enlace…';
+      try {
+        await sinc.crearEnlaceArbitro();
+        await pintarNube();
+        aviso('Enlace creado. Compártelo con el árbitro o enséñale el código QR.');
+      } catch (err) {
+        aviso(err.message);
+        pintarNube();
+      }
+    }
+    if (id === 'nubeCopiar') {
+      const campo = panelNube.querySelector('#nubeEnlaceUrl');
+      try { await navigator.clipboard.writeText(campo.value); aviso('Enlace copiado.'); } catch { campo.select(); aviso('Selecciona el enlace y cópialo.'); }
+    }
+    if (id === 'nubeCompartir') {
+      const url = panelNube.querySelector('#nubeEnlaceUrl').value;
+      try { await navigator.share({ title: `Fichas · ${equipoSinc.nombre}`, url }); } catch { /* cancelado */ }
+    }
+  });
 
   // ---------------------------------------------------------------- Sección y botón de navegación
   const boton = document.createElement('button');
@@ -76,6 +169,7 @@ function iniciar(sb) {
     }
     if (!S.equipos.some((e) => e.id === leer(CLAVE_EQUIPO)) && S.equipos[0]) escribir(CLAVE_EQUIPO, S.equipos[0].id);
     pintar();
+    activarEquipo(S.equipos.find((e) => e.id === leer(CLAVE_EQUIPO)) || null);
   }
 
   // ---------------------------------------------------------------- Pintado
@@ -98,7 +192,7 @@ function iniciar(sb) {
             <div class="nota">${esc(S.clubes[e.club_id] || '')} · ${esc(ROLES[e.rol] || '')}</div></div>
           ${e.id === activo ? '<span class="etq">Equipo activo</span>' : `<button class="btn" data-activar="${e.id}">Usar este equipo</button>`}
         </article>`).join('') + '</div>';
-      h += '<p class="nota">Las fichas y los partidos todavía se guardan solo en este móvil. La sincronización con el equipo llega en el siguiente paso.</p>';
+      h += '<p class="nota">Las fichas, la convocatoria y los goles del <strong>equipo activo</strong> se comparten con el resto de delegados y entrenadores del equipo. Sin cobertura se guardan en el móvil y se suben al volver la conexión.</p>';
     }
 
     for (const clubId of S.adminDe) h += pintarAdmin(clubId);
@@ -203,7 +297,13 @@ function iniciar(sb) {
       if (error) aviso(`El código no es válido: ${error.message}`);
       return;
     }
-    if (t.dataset.activar) { escribir(CLAVE_EQUIPO, t.dataset.activar); pintar(); aviso('Equipo activo cambiado.'); return; }
+    if (t.dataset.activar) {
+      escribir(CLAVE_EQUIPO, t.dataset.activar);
+      pintar();
+      await activarEquipo(S.equipos.find((x) => x.id === t.dataset.activar));
+      aviso('Equipo activo cambiado: las fichas y el partido son ahora los de este equipo.');
+      return;
+    }
     if (t.dataset.borrarInv) {
       const { error } = await sb.from('invitaciones').delete().eq('id', t.dataset.borrarInv);
       if (error) aviso(error.message);
@@ -227,7 +327,7 @@ function iniciar(sb) {
   sb.auth.onAuthStateChange((evento, sesion) => {
     const antes = S.sesion?.user?.id;
     S.sesion = sesion;
-    if (evento === 'SIGNED_OUT') { S.aceptadas = false; S.equipos = []; S.adminDe = []; pintar(); return; }
+    if (evento === 'SIGNED_OUT') { S.aceptadas = false; S.equipos = []; S.adminDe = []; pintar(); activarEquipo(null); return; }
     if (sesion && sesion.user.id !== antes) {
       // Tras volver del enlace del correo, limpiar el código de acceso de la barra de direcciones
       if (location.hash.includes('access_token')) history.replaceState(null, '', location.pathname);

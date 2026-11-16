@@ -11,7 +11,8 @@
     "publicar:artifact": "node scripts/publicar-artifact.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.119.0"
+    "@supabase/supabase-js": "^2.119.0",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.16",

@@ -16,6 +16,12 @@
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "geolocation=(), microphone=()"
 
+# El enlace del árbitro (/a/<código>) abre la página del árbitro
+[[redirects]]
+  from = "/a/*"
+  to = "/arbitro.html"
+  status = 200
+
 # El enlace del árbitro (/a/<código>) no debe aparecer en buscadores
 [[headers]]
   for = "/a/*"

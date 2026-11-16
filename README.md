@@ -6,6 +6,7 @@ App para delegados y cuerpo técnico de fútbol base (fútbol sala, F7 y F11):
 - **Partido**: marcador, cronómetro o cuenta atrás por partes, goles por jugadora y resumen para WhatsApp.
 - **Pizarra**: sistemas, jugadas y ejercicios de entrenamiento animados (111 en la biblioteca), y editor propio.
 - **Club** (con Supabase): acceso por email sin contraseña, equipos, invitaciones y permisos por equipo.
+- **Nube** (con Supabase): fichas, fotos, convocatoria y goles compartidos por equipo, con cola de cambios para cuando no hay cobertura, y **enlace para el árbitro** (`/a/<código>`, con QR) que caduca en 8 horas.
 
 Sin configurar Supabase, la app funciona en **modo local**: todo se guarda solo en el móvil.
 
@@ -14,7 +15,8 @@ Sin configurar Supabase, la app funciona en **modo local**: todo se guarda solo 
 | Carpeta | Contenido |
 |---|---|
 | `index.html`, `public/js/` | La app: pizarra, biblioteca, fichas y partido (JavaScript sin dependencias). |
-| `src/` | Conexión con Supabase y sección «Club». |
+| `src/` | Conexión con Supabase: sección «Club» (`main.js`), sincronización (`sync.js`) y página del árbitro (`arbitro.js`). |
+| `pruebas/` | Supabase falsa en memoria para probar la sincronización en el navegador. |
 | `supabase/migrations/` | Esquema de la base de datos con permisos por fila. |
 | `supabase/semilla.sql` | Alta del club, la temporada y el primer administrador. |
 | `supabase/pruebas/` | Pruebas del esquema y de los permisos en un Postgres local (`npm run test:bd`). |
@@ -35,7 +37,7 @@ npm run build      # genera dist/
 ### 1. Supabase
 
 1. Crea un proyecto en [supabase.com](https://supabase.com) en una región de la UE (p. ej. *Frankfurt*).
-2. **SQL Editor → New query**: pega el contenido de `supabase/migrations/0001_esquema.sql` y pulsa *Run*.
+2. **SQL Editor → New query**: pega y ejecuta, en orden, cada archivo de `supabase/migrations/` (`0001_esquema.sql`, `0002_arbitro_fotos.sql`…). Si Supabase avisa de «operaciones destructivas», es porque se reemplazan funciones o reglas de permisos: no se borran datos.
 3. Abre `supabase/semilla.sql`, cambia `cambia-esto@ejemplo.com` por tu email (en minúsculas) **solo en el editor de Supabase, no en el repositorio**, y ejecútalo. Así quedas como administrador del club.
 4. **Authentication → URL Configuration**:
    - *Site URL*: la dirección de Netlify (p. ej. `https://delegados.netlify.app`).

@@ -248,9 +248,9 @@ La versión 0 funciona bien, así que **no se reescribe en Next.js**. Se evoluci
 1. ✔ Repositorio (github.com/comodescargar/delegadosApp), Vite y configuración de Netlify.
 2. ✔ Esquema de base de datos con sus permisos (`supabase/migrations/0001_esquema.sql`, 36 comprobaciones en `npm run test:bd`).
 3. ✔ Login, equipos e invitaciones (sección «Club»).
-4. Fichas en la nube, con un botón para subir las fichas ya guardadas en el móvil.
-5. Partidos y goles en la nube.
-6. Enlace del árbitro.
+4. ✔ Fichas en la nube, con un botón para subir las fichas ya guardadas en el móvil (16/11/2026).
+5. ✔ Partidos, convocatoria y goles en la nube, con cola sin conexión (16/11/2026).
+6. ✔ Enlace del árbitro con fotos mediante enlaces firmados de 8 horas, sin claves secretas en el servidor (16/11/2026).
 7. Jugadas propias compartidas por el club.
 
 ---

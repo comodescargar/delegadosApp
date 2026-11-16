@@ -9,3 +9,18 @@
 .club-lista { display: flex; flex-direction: column; gap: 6px; }
 .club-fila { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 10px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--borde); }
 .club-fila span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+/* Panel de sincronización en la pestaña Fichas */
+.f-nube { display: flex; flex-direction: column; gap: 10px; background: var(--panel2); border: 1px solid var(--borde); border-radius: 12px; padding: 12px; }
+.f-nube-cab { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.f-nube-cab > div { flex: 1; min-width: 180px; }
+.f-nube-estado { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--borde); color: var(--suave); }
+.f-nube-estado.ok { border-color: #166534; color: #86efac; background: #0f2a1a; }
+.f-nube-estado.aviso { border-color: #9a3412; color: #fed7aa; background: #3b1d0a; }
+.f-nube-estado.error { border-color: #7f1d1d; color: #fecaca; background: #3a0d0d; }
+.f-nube-aviso { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.f-nube-arbitro { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.f-nube-enlace { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.f-nube-qr img { display: block; border-radius: 8px; background: #fff; }
+.f-nube-enlace-txt { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 8px; }
+.f-nube-enlace-txt input { width: 100%; }
