@@ -105,6 +105,16 @@ await filas("insert into convocatorias (partido_id, ficha_id, titular) values ($
 await filas("insert into eventos (partido_id, tipo, ficha_id, minuto) values ($1, 'gol', $2, 12)", [partido.id, ficha.id]);
 await filas("insert into eventos (partido_id, tipo, minuto) values ($1, 'gol_rival', 20)", [partido.id]);
 comprobar((await filas('select count(*)::int n from eventos'))[0].n === 2, 'crea partido, convocatoria y goles');
+// Cambios, tarjetas y minutos
+const [jug2] = await filas("insert into jugadoras (club_id, nombre) values ($1, 'Sara') returning id", [club.id]);
+const [ficha2] = await filas("insert into fichas (equipo_id, jugadora_id, dorsal) values ($1, $2, '10') returning id", [alevin.id, jug2.id]);
+await filas("insert into convocatorias (partido_id, ficha_id) values ($1, $2)", [partido.id, ficha2.id]);
+await filas("insert into eventos (partido_id, tipo, ficha_id, ficha_entra, minuto, parte, segundo) values ($1, 'cambio', $2, $3, 18, 1, 1050)", [partido.id, ficha.id, ficha2.id]);
+await filas("insert into eventos (partido_id, tipo, ficha_id, minuto, parte, segundo) values ($1, 'amarilla', $2, 22, 1, 1300)", [partido.id, ficha2.id]);
+comprobar((await filas("select count(*)::int n from eventos where tipo in ('cambio', 'amarilla')"))[0].n === 2, 'apunta un cambio y una tarjeta');
+comprobar(await falla("insert into eventos (partido_id, tipo, ficha_id, ficha_entra) values ($1, 'amarilla', $2, $3)", [partido.id, ficha.id, ficha2.id]), 'NO acepta «entra» en algo que no es un cambio');
+await filas('update convocatorias set segundos_jugados = 1050 where partido_id = $1 and ficha_id = $2', [partido.id, ficha.id]);
+comprobar((await filas('select segundos_jugados s from convocatorias where partido_id = $1 and ficha_id = $2', [partido.id, ficha.id]))[0].s === 1050, 'guarda los segundos jugados de cada convocada');
 const [enlace] = await filas('insert into enlaces_arbitro (partido_id, fotos) values ($1, $2) returning token', [partido.id, JSON.stringify({ [ficha.id]: 'https://firmada.example/lucia.jpg' })]);
 comprobar(enlace?.token?.length === 64, 'crea un enlace para el árbitro con código de 64 caracteres');
 await filas("insert into storage.objects (bucket_id, name) values ('fichas', $1)", [`${alevin.id}/lucia.jpg`]);
@@ -138,7 +148,7 @@ comprobar(await falla("insert into jugadoras (club_id, nombre) values ($1, 'Cola
 console.log('\n5. Administrador');
 await como(U.admin);
 comprobar((await filas('select count(*)::int n from equipos'))[0].n === 2, 've los dos equipos');
-comprobar((await filas('select count(*)::int n from jugadoras'))[0].n === 2, 've a todas las personas del club (jugadoras y cuerpo técnico)');
+comprobar((await filas('select count(*)::int n from jugadoras'))[0].n === 3, 've a todas las personas del club (jugadoras y cuerpo técnico)');
 comprobar((await filas('select count(*)::int n from miembros_equipo'))[0].n === 2, 've a los miembros de los equipos');
 comprobar((await filas('select titulo from jugadas')).length === 1, 'no ve la jugada privada de la delegada (sí la compartida)');
 
@@ -148,7 +158,7 @@ await como(null);
 const arb = await filas('select * from public.fichas_arbitro($1)', [enlace.token]);
 comprobar(arb[0]?.tipo === 'jugadora' && arb[0].dorsal === '14' && arb[0].nombre === 'Lucía' && arb[0].titular === true, 've la convocada con el dorsal del día');
 comprobar(arb[0]?.foto_url === 'https://firmada.example/lucia.jpg', 've la foto con el enlace temporal guardado');
-comprobar(arb.length === 2 && arb[1].tipo === 'staff' && arb[1].cargo === 'practicas' && arb[1].dorsal === null && arb[1].titular === false,
+comprobar(arb.length === 3 && arb[2].tipo === 'staff' && arb[2].cargo === 'practicas' && arb[2].dorsal === null && arb[2].titular === false,
   've a la entrenadora en prácticas después de las jugadoras, sin dorsal ni titular');
 comprobar((await filas('select * from public.fichas_arbitro($1)', ['codigo-inventado'])).length === 0, 'con un código inventado no ve nada');
 comprobar(await falla('select * from fichas'), 'NO puede leer las tablas directamente');

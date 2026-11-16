@@ -10,12 +10,13 @@ const CADA_MS = 60_000;
 export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEstado = () => {} } = {}) {
   const FA = window.FichasApp;
   const claveCola = `delegado.cola.${equipo.id}`;
-  const vacia = () => ({ fichas: {}, borradas: {}, eventos: {}, eventosBorrados: {}, partido: false });
+  const vacia = () => ({ fichas: {}, borradas: {}, eventos: {}, eventosBorrados: {}, partido: false, minutos: false, cierres: {} });
   let cola = vacia();
   try { cola = { ...vacia(), ...JSON.parse(localStorage.getItem(claveCola) || '{}') }; } catch { /* cola vacía */ }
   const guardarCola = () => { try { localStorage.setItem(claveCola, JSON.stringify(cola)); } catch { /* sin almacenamiento */ } };
   const pendientes = () => Object.keys(cola.fichas).length + Object.keys(cola.borradas).length
-    + Object.keys(cola.eventos).length + Object.keys(cola.eventosBorrados).length + (cola.partido ? 1 : 0);
+    + Object.keys(cola.eventos).length + Object.keys(cola.eventosBorrados).length + (cola.partido ? 1 : 0)
+    + (cola.minutos ? 1 : 0) + Object.keys(cola.cierres).length;
 
   let estado = { texto: 'Conectando…', tipo: 'info' };
   const ponerEstado = (texto, tipo = 'info') => { estado = { texto, tipo }; alCambiarEstado(estado); };
@@ -104,16 +105,40 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
     for (const id of Object.keys(cola.eventos)) {
       const ev = P.eventos.find((e) => e.id === id);
       if (ev && ES_UUID.test(ev.id)) {
-        const ficha = ev.fichaId && locales[ev.fichaId]?.enNube ? ev.fichaId : null;
+        const enNube = (fid) => (fid && locales[fid]?.enNube ? fid : null);
         comprobar(await sb.from('eventos').upsert({
-          id: ev.id, partido_id: partidoId, tipo: ev.tipo === 'rival' ? 'gol_rival' : 'gol', ficha_id: ev.tipo === 'rival' ? null : ficha,
-          minuto: ev.min ?? null, parte: ev.parte || 1,
-        }), 'Guardar gol');
+          id: ev.id, partido_id: partidoId, tipo: ev.tipo === 'rival' ? 'gol_rival' : ev.tipo,
+          ficha_id: ev.tipo === 'rival' ? null : enNube(ev.fichaId),
+          ficha_entra: ev.tipo === 'cambio' ? enNube(ev.entraId) : null,
+          minuto: ev.min ?? null, parte: ev.parte || 1, segundo: ev.seg ?? null,
+        }), 'Guardar lo apuntado en el partido');
       }
       delete cola.eventos[id];
       guardarCola();
     }
+    // Minutos jugados del partido en curso (los calcula el móvil que lleva el reloj)
+    if (cola.minutos) {
+      await subirMinutos(partidoId, FA.segundosJugados(), locales);
+      cola.minutos = false;
+      guardarCola();
+    }
+    // Minutos finales de partidos ya cerrados en este móvil
+    for (const [pid, seg] of Object.entries(cola.cierres)) {
+      await subirMinutos(pid, seg, locales, true);
+      delete cola.cierres[pid];
+      guardarCola();
+    }
     return !pendientes();
+  }
+
+  // cerrado = partido anterior: las fichas ya tienen la convocatoria del siguiente, así que solo cuenta quién jugó
+  async function subirMinutos(partidoId, seg, locales, cerrado = false) {
+    if (!seg || !ES_UUID.test(partidoId || '')) return;
+    const filas = Object.values(locales)
+      .filter((f) => f.enNube && f.tipo !== 'staff' && (cerrado ? seg[f.id] > 0 : f.convocada))
+      .map((f) => ({ partido_id: partidoId, ficha_id: f.id, segundos_jugados: Math.max(0, Math.round(seg[f.id] || 0)) }));
+    if (!filas.length) return;
+    comprobar(await sb.from('convocatorias').upsert(filas, { onConflict: 'partido_id,ficha_id' }), 'Guardar minutos jugados');
   }
 
   // ---------------------------------------------------------------- Bajada
@@ -131,13 +156,13 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
     if (ultimo) {
       // Si otro delegado ha empezado un partido más reciente, se pasa a ese
       if (P.partidoId !== ultimo.id) {
-        Object.assign(P, { partidoId: ultimo.id, parte: 1, acumulado: 0, desde: null, eventos: [], enlaceArbitro: null });
+        Object.assign(P, { partidoId: ultimo.id, parte: 1, acumulado: 0, desde: null, eventos: [], enlaceArbitro: null, duraciones: [] });
       }
       P.rival = ultimo.rival || '';
       P.duracion = ultimo.minutos_parte || P.duracion;
       const [co, ev] = await Promise.all([
         sb.from('convocatorias').select('ficha_id, dorsal_partido, titular').eq('partido_id', ultimo.id),
-        sb.from('eventos').select('id, tipo, ficha_id, minuto, parte').eq('partido_id', ultimo.id).order('creado_en'),
+        sb.from('eventos').select('id, tipo, ficha_id, ficha_entra, minuto, parte, segundo').eq('partido_id', ultimo.id).order('creado_en'),
       ]);
       comprobar(co, 'Leer convocatoria');
       comprobar(ev, 'Leer goles');
@@ -182,7 +207,8 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
       const porId = Object.fromEntries(Object.values(locales).map((f) => [f.id, f]));
       const dorsalDe = (f) => f?.dorsalPartido || f?.dorsal || '';
       const deNube = eventos.filter((e) => !cola.eventosBorrados[e.id]).map((e) => ({
-        id: e.id, tipo: e.tipo === 'gol_rival' ? 'rival' : 'gol', fichaId: e.ficha_id, min: e.minuto, parte: e.parte,
+        id: e.id, tipo: e.tipo === 'gol_rival' ? 'rival' : e.tipo, fichaId: e.ficha_id, min: e.minuto, parte: e.parte,
+        ...(e.tipo === 'cambio' ? { entraId: e.ficha_entra } : {}), ...(e.segundo != null ? { seg: e.segundo } : {}),
         dorsal: e.ficha_id ? dorsalDe(porId[e.ficha_id]) : '', nombre: e.ficha_id ? porId[e.ficha_id]?.nombre || '' : '',
       }));
       const idsNube = new Set(deNube.map((e) => e.id));
@@ -316,9 +342,11 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
       guardarCola(); programar(300);
     },
     partidoCambiado() { cola.partido = true; guardarCola(); programar(1500); },
+    minutosCambiados() { if (FA.partido().partidoId || cola.partido) { cola.minutos = true; guardarCola(); programar(2000); } },
+    cerrarPartido(partidoId, seg) { if (seg && Object.keys(seg).length) { cola.cierres[partidoId] = seg; guardarCola(); } },
     nuevoPartido() {
       // El partido se crea en la nube con el siguiente cambio; los goles pendientes del anterior se descartan
-      cola.eventos = {}; cola.eventosBorrados = {}; cola.partido = true;
+      cola.eventos = {}; cola.eventosBorrados = {}; cola.partido = true; cola.minutos = false;
       guardarCola(); programar();
     },
     // Para la sección Club

@@ -253,8 +253,11 @@
   // Nuevo partido: goles y reloj a cero, dorsales del día y titulares borrados, todas convocadas.
   // En modo nube, el siguiente cambio crea un partido nuevo en la base de datos (el anterior queda en el historial).
   async function nuevoPartido() {
+    // Antes de borrar nada, los minutos finales de cada jugadora quedan para el historial
+    if (P.partidoId && relojUsado()) avisarSinc('cerrarPartido', P.partidoId, estadoCampo().seg);
     for (const f of F.lista) { f.dorsalPartido = ''; f.titular = false; f.convocada = true; await guardarFicha(f); }
-    Object.assign(P, { parte: 1, acumulado: 0, desde: null, eventos: [], rival: '', partidoId: null, enlaceArbitro: null });
+    Object.assign(P, { parte: 1, acumulado: 0, desde: null, eventos: [], rival: '', partidoId: null, enlaceArbitro: null, duraciones: [] });
+    Object.assign(M, { sale: null, tarjetaPara: null });
     relojEncendido(false);
     guardarP();
     $('#fRival').value = '';
@@ -399,7 +402,7 @@
   const claveP = () => 'delegado.partido' + (CTX.equipoId ? '.' + CTX.equipoId : '');
   let P = {};
   function cargarP() {
-    const base = { parte: 1, duracion: 25, modo: 'crono', acumulado: 0, desde: null, eventos: [], rival: '', partidoId: null };
+    const base = { parte: 1, duracion: 25, modo: 'crono', acumulado: 0, desde: null, eventos: [], rival: '', partidoId: null, duraciones: [] };
     let guardado = {};
     try { guardado = JSON.parse(leerLS(claveP(), '{}')) || {}; } catch { guardado = {}; }
     // Versión 0: el rival se guardaba aparte
@@ -448,44 +451,177 @@
     document.querySelectorAll('#pModo button').forEach((b) => b.classList.toggle('activo', b.dataset.modo === P.modo));
     pintarReloj();
 
-    // Solo jugadoras pueden marcar (el cuerpo técnico no sale en la lista)
-    const todasJug = F.lista.filter((f) => !esStaff(f));
-    const conv = todasJug.filter((f) => f.convocada);
-    const jugadoras = [...(conv.length ? conv : todasJug)].sort(ordenArbitro);
-    const golesDe = (id) => P.eventos.filter((e) => e.tipo === 'gol' && e.fichaId === id).length;
-    $('#pGoleadoras').innerHTML = jugadoras.length
-      ? jugadoras.map((f) => {
-        const g = golesDe(f.id);
-        return `<button class="gol-btn${f.titular ? ' tit' : ''}" data-gol="${f.id}" aria-label="Gol de ${esc(f.nombre || 'dorsal ' + nHoy(f))}">
-          <b>${esc(nHoy(f) || '–')}</b><span>${esc(f.nombre || 'Sin nombre')}</span>${g ? `<i>⚽ ${g}</i>` : ''}</button>`;
-      }).join('')
-      : '<p class="nota">Añade las fichas en la pestaña «Fichas» para apuntar los goles de cada jugadora. Mientras tanto puedes usar «+ Gol sin asignar».</p>';
+    pintarJugadorasPartido();
+    pintarEventos();
+  }
 
-    const ev = [...P.eventos].reverse();
+  // ---------------------------------------------------------------- Campo, banquillo, cambios y tarjetas
+  // Quién está en el campo se deduce de las titulares y de los cambios y rojas apuntados (igual en todos los móviles).
+  const M = { accion: 'gol', sale: null, tarjetaPara: null };
+  const segAhora = () => Math.floor(msJugados() / 1000);
+  // Solo el móvil que ha llevado el reloj sabe los minutos de verdad
+  const relojUsado = () => !!(P.acumulado || P.desde || P.duraciones?.length);
+  const segDe = (e) => (e.seg ?? Math.max(0, ((e.min || 1) - 1) * 60));
+  const convocadasJug = () => F.lista.filter((f) => !esStaff(f) && f.convocada);
+
+  // Recorre las partes y los cambios: quién está en el campo ahora y cuántos segundos lleva cada una
+  function estadoCampo() {
+    const conv = new Set(convocadasJug().map((f) => f.id));
+    let campo = new Set(convocadasJug().filter((f) => f.titular).map((f) => f.id));
+    const seg = {}; const entrada = {}; const expulsadas = new Set();
+    const evs = P.eventos.filter((e) => e.tipo === 'cambio' || e.tipo === 'roja').sort((a, b) => a.parte - b.parte || segDe(a) - segDe(b));
+    let i = 0;
+    for (let p = 1; p <= P.parte; p++) {
+      const fin = p < P.parte ? (P.duraciones?.[p - 1] ?? P.duracion * 60) : segAhora();
+      campo.forEach((id) => { entrada[id] = 0; });
+      for (; i < evs.length && evs[i].parte <= p; i++) {
+        const e = evs[i]; const t = Math.min(segDe(e), fin);
+        const salir = (id) => { if (campo.has(id)) { seg[id] = (seg[id] || 0) + Math.max(0, t - entrada[id]); campo.delete(id); } };
+        if (e.tipo === 'roja') { salir(e.fichaId); expulsadas.add(e.fichaId); }
+        if (e.tipo === 'cambio') {
+          if (e.fichaId) salir(e.fichaId);
+          if (e.entraId && !campo.has(e.entraId) && !expulsadas.has(e.entraId)) { campo.add(e.entraId); entrada[e.entraId] = t; }
+        }
+      }
+      campo.forEach((id) => { seg[id] = (seg[id] || 0) + Math.max(0, fin - entrada[id]); });
+    }
+    campo = new Set([...campo].filter((id) => conv.has(id)));
+    return { campo, seg, expulsadas };
+  }
+  const minutos = (s) => (s ? `${Math.floor(s / 60)}'` : '');
+  const tarjetasDe = (id) => P.eventos.filter((e) => (e.tipo === 'amarilla' || e.tipo === 'roja') && e.fichaId === id).map((e) => e.tipo);
+
+  const AYUDA = {
+    gol: 'Toca a quien marca.',
+    cambio: 'Toca a quien <strong>sale</strong> (en el campo) y luego a quien <strong>entra</strong> (banquillo). Si falta alguien en el campo, toca directamente a quien entra.',
+    tarjeta: 'Toca a la jugadora que recibe la tarjeta.',
+  };
+
+  function pintarJugadorasPartido() {
+    document.querySelectorAll('#pAccion button').forEach((b) => b.classList.toggle('activo', b.dataset.accion === M.accion));
+    const cont = $('#pGoleadoras');
+    const todas = convocadasJug().length ? convocadasJug() : F.lista.filter((f) => !esStaff(f));
+    if (!todas.length) {
+      $('#pAyuda').innerHTML = AYUDA[M.accion];
+      cont.innerHTML = '<p class="nota">Añade las fichas en la pestaña «Fichas» para apuntar goles, cambios y tarjetas de cada jugadora. Mientras tanto puedes usar «+ Gol sin asignar».</p>';
+      return;
+    }
+    const { campo, seg, expulsadas } = estadoCampo();
+    const golesDe = (id) => P.eventos.filter((e) => e.tipo === 'gol' && e.fichaId === id).length;
+    let ayuda = AYUDA[M.accion];
+    if (M.accion === 'cambio' && M.sale) {
+      const f = F.lista.find((x) => x.id === M.sale);
+      ayuda = `Sale <strong>${esc(nHoy(f) || '')} ${esc(f?.nombre || '')}</strong>. Ahora toca a quien entra.`;
+    }
+    if (M.accion === 'tarjeta' && M.tarjetaPara) {
+      const f = F.lista.find((x) => x.id === M.tarjetaPara);
+      ayuda = `Tarjeta para <strong>${esc(nHoy(f) || '')} ${esc(f?.nombre || '')}</strong>:
+        <button class="btn p-amarilla" data-tarjeta="amarilla">🟨 Amarilla</button>
+        <button class="btn p-roja" data-tarjeta="roja">🟥 Roja</button>
+        <button class="btn" data-tarjeta="cancelar">Cancelar</button>`;
+    }
+    $('#pAyuda').innerHTML = ayuda;
+
+    const boton = (f) => {
+      const g = golesDe(f.id); const t = tarjetasDe(f.id);
+      const clases = ['gol-btn', campo.has(f.id) ? 'en-campo' : 'banquillo', expulsadas.has(f.id) ? 'expulsada' : '',
+        M.sale === f.id || M.tarjetaPara === f.id ? 'elegida' : ''].filter(Boolean).join(' ');
+      const marcas = `${g ? `<i>⚽ ${g}</i>` : ''}${t.includes('roja') ? '<i class="tarj">🟥</i>' : t.length ? `<i class="tarj">${'🟨'.repeat(t.length)}</i>` : ''}`;
+      return `<button class="${clases}" data-jug="${f.id}" ${expulsadas.has(f.id) && M.accion === 'cambio' ? 'disabled' : ''}
+        aria-label="${esc(f.nombre || 'dorsal ' + nHoy(f))}${campo.has(f.id) ? ', en el campo' : ', en el banquillo'}">
+        <b>${esc(nHoy(f) || '–')}</b><span>${esc(f.nombre || 'Sin nombre')}<small>${minutos(seg[f.id])}</small></span>${marcas}</button>`;
+    };
+    const enCampo = todas.filter((f) => campo.has(f.id)).sort(ordenArbitro);
+    const banquillo = todas.filter((f) => !campo.has(f.id)).sort(porDorsal(nHoy));
+    cont.innerHTML = (enCampo.length ? `<h3 class="p-grupo">En el campo · ${enCampo.length}</h3><div class="goleadoras">${enCampo.map(boton).join('')}</div>` : '')
+      + `<h3 class="p-grupo">${enCampo.length ? 'Banquillo' : 'Convocadas'} · ${banquillo.length}</h3><div class="goleadoras">${banquillo.map(boton).join('')}</div>`
+      + (!enCampo.length ? '<p class="nota">Marca las titulares en «Fichas» (o usa «Cambio» para sacarlas al campo) y la app llevará los minutos de cada una.</p>' : '');
+  }
+
+  const NOMBRE_EV = { gol: '⚽', amarilla: '🟨', roja: '🟥', cambio: '🔄' };
+  function pintarEventos() {
+    const quien = (id, dorsal, nombre) => {
+      const f = id && F.lista.find((x) => x.id === id);
+      const d = dorsal || (f ? nHoy(f) : ''); const n = nombre || f?.nombre || '';
+      return `${d ? `<b>${esc(d)}</b> ` : ''}${esc(n || 'Sin nombre')}`;
+    };
+    const texto = (e) => {
+      if (e.tipo === 'rival') return `Gol de ${esc(nombreRival())}`;
+      if (e.tipo === 'gol') return `⚽ ${e.fichaId || e.nombre ? quien(e.fichaId, e.dorsal, e.nombre) : 'Gol nuestro'}`;
+      if (e.tipo === 'cambio') return `🔄 Entra ${e.entraId ? quien(e.entraId) : '—'}${e.fichaId ? ` · Sale ${quien(e.fichaId)}` : ''}`;
+      return `${NOMBRE_EV[e.tipo]} ${quien(e.fichaId)}${e.dobleAmarilla ? ' (doble amarilla)' : ''}`;
+    };
+    const orden = new Map(P.eventos.map((e, i) => [e.id, i]));
+    const ev = [...P.eventos].sort((a, b) => b.parte - a.parte || segDe(b) - segDe(a) || orden.get(b.id) - orden.get(a.id));
     $('#pEventos').innerHTML = ev.length
-      ? ev.map((e) => `<div class="evento${e.tipo === 'rival' ? ' rival' : ''}">
+      ? ev.map((e) => `<div class="evento ${e.tipo}">
           <span class="min">${e.min}' · ${e.parte}ª</span>
-          <span class="que">${e.tipo === 'rival' ? `Gol de ${esc(nombreRival())}` : `⚽ ${e.dorsal ? `<b>${esc(e.dorsal)}</b> ` : ''}${esc(e.nombre || 'Gol nuestro')}`}</span>
+          <span class="que">${texto(e)}</span>
           <button data-quitar="${e.id}">Quitar</button>
         </div>`).join('')
-      : '<p class="nota">Aún no hay goles. Cada gol queda apuntado con su minuto y parte.</p>';
+      : '<p class="nota">Aún no hay nada apuntado. Goles, cambios y tarjetas quedan con su minuto y parte.</p>';
   }
 
   function apuntar(ev) {
-    const evento = { id: uuid(), min: minutoActual(), parte: P.parte, ...ev };
+    const evento = { id: uuid(), min: minutoActual(), parte: P.parte, seg: segAhora(), ...ev };
     P.eventos.push(evento);
     guardarP();
     avisarSinc('eventoNuevo', evento);
+    if (ev.tipo === 'cambio' || ev.tipo === 'roja') avisarSinc('minutosCambiados');
     pintarPartido();
     try { navigator.vibrate?.(60); } catch { /* opcional */ }
+    return evento;
   }
 
+  $('#pAccion').addEventListener('click', (e) => {
+    const a = e.target.closest('[data-accion]')?.dataset.accion;
+    if (!a) return;
+    Object.assign(M, { accion: a, sale: null, tarjetaPara: null });
+    pintarJugadorasPartido();
+  });
+
+  $('#pAyuda').addEventListener('click', (e) => {
+    const tipo = e.target.closest('[data-tarjeta]')?.dataset.tarjeta;
+    if (!tipo || !M.tarjetaPara) return;
+    const f = F.lista.find((x) => x.id === M.tarjetaPara);
+    M.tarjetaPara = null;
+    if (tipo === 'cancelar') { pintarJugadorasPartido(); return; }
+    const yaAmarilla = tarjetasDe(f.id).includes('amarilla');
+    apuntar({ tipo, fichaId: f.id, dorsal: nHoy(f), nombre: f.nombre });
+    if (tipo === 'amarilla' && yaAmarilla) {
+      apuntar({ tipo: 'roja', fichaId: f.id, dorsal: nHoy(f), nombre: f.nombre, dobleAmarilla: true });
+      aviso(`🟥 Segunda amarilla: ${f.nombre || nHoy(f)} queda expulsada.`);
+    } else {
+      aviso(`${tipo === 'roja' ? '🟥 Roja' : '🟨 Amarilla'} para ${f.nombre || 'la ' + nHoy(f)} (${minutoActual()}')`);
+    }
+  });
+
   $('#pGoleadoras').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-gol]');
-    if (!b) return;
-    const f = F.lista.find((x) => x.id === b.dataset.gol);
-    apuntar({ tipo: 'gol', fichaId: f.id, dorsal: nHoy(f), nombre: f.nombre });
-    aviso(`⚽ Gol de ${f.nombre || 'la ' + nHoy(f)} (${minutoActual()}')`);
+    const b = e.target.closest('[data-jug]');
+    if (!b || b.disabled) return;
+    const f = F.lista.find((x) => x.id === b.dataset.jug);
+    if (M.accion === 'gol') {
+      apuntar({ tipo: 'gol', fichaId: f.id, dorsal: nHoy(f), nombre: f.nombre });
+      aviso(`⚽ Gol de ${f.nombre || 'la ' + nHoy(f)} (${minutoActual()}')`);
+      return;
+    }
+    if (M.accion === 'tarjeta') {
+      M.tarjetaPara = M.tarjetaPara === f.id ? null : f.id;
+      pintarJugadorasPartido();
+      return;
+    }
+    // Cambio
+    const { campo, expulsadas } = estadoCampo();
+    if (campo.has(f.id)) {
+      M.sale = M.sale === f.id ? null : f.id;
+      pintarJugadorasPartido();
+      return;
+    }
+    if (expulsadas.has(f.id)) return;
+    const sale = M.sale ? F.lista.find((x) => x.id === M.sale) : null;
+    M.sale = null;
+    apuntar({ tipo: 'cambio', fichaId: sale?.id || null, entraId: f.id });
+    aviso(sale ? `🔄 Entra ${f.nombre || nHoy(f)} por ${sale.nombre || nHoy(sale)} (${minutoActual()}')` : `🔄 Entra ${f.nombre || nHoy(f)} (${minutoActual()}')`);
   });
   $('#pGolSinAsignar').addEventListener('click', () => apuntar({ tipo: 'gol', fichaId: null, dorsal: '', nombre: '' }));
   $('#pGolRival').addEventListener('click', () => apuntar({ tipo: 'rival' }));
@@ -498,9 +634,11 @@
       setTimeout(() => { b.classList.remove('confirmar'); b.textContent = 'Quitar'; }, 3000);
       return;
     }
+    const quitado = P.eventos.find((x) => x.id === b.dataset.quitar);
     P.eventos = P.eventos.filter((x) => x.id !== b.dataset.quitar);
     guardarP();
     avisarSinc('eventoBorrado', b.dataset.quitar);
+    if (quitado?.tipo === 'cambio' || quitado?.tipo === 'roja') avisarSinc('minutosCambiados');
     pintarPartido();
   });
 
@@ -509,9 +647,9 @@
     if (!si && F.wakeReloj) { try { F.wakeReloj.release(); } catch { /* nada */ } F.wakeReloj = null; }
   }
   $('#pPlay').addEventListener('click', () => {
-    if (P.desde) { P.acumulado += Date.now() - P.desde; P.desde = null; relojEncendido(false); }
+    if (P.desde) { P.acumulado += Date.now() - P.desde; P.desde = null; relojEncendido(false); avisarSinc('minutosCambiados'); }
     else { P.desde = Date.now(); relojEncendido(true); }
-    guardarP(); pintarReloj();
+    guardarP(); pintarReloj(); pintarJugadorasPartido();
   });
   $('#pSigParte').addEventListener('click', (e) => {
     const b = e.currentTarget;
@@ -521,8 +659,10 @@
       return;
     }
     b.classList.remove('confirmar'); b.textContent = 'Siguiente parte';
+    // Se guarda lo que ha durado la parte para calcular bien los minutos de cada jugadora
+    P.duraciones = [...(P.duraciones || []), segAhora()];
     P.parte += 1; P.acumulado = 0; P.desde = null; relojEncendido(false);
-    guardarP(); pintarPartido();
+    guardarP(); avisarSinc('minutosCambiados'); pintarPartido();
   });
   $('#pReiniciarReloj').addEventListener('click', (e) => {
     const b = e.currentTarget;
@@ -554,6 +694,11 @@
       lineas.push('', 'Goles:');
       nuestros.forEach((e) => lineas.push(`• ${e.min}' (${e.parte}ª) ${[e.dorsal, e.nombre].filter(Boolean).join(' ') || 'Gol'}`));
     }
+    const tarjetas = P.eventos.filter((e) => e.tipo === 'amarilla' || e.tipo === 'roja');
+    if (tarjetas.length) {
+      lineas.push('', 'Tarjetas:');
+      tarjetas.forEach((e) => lineas.push(`• ${e.min}' (${e.parte}ª) ${e.tipo === 'roja' ? '🟥' : '🟨'} ${[e.dorsal, e.nombre].filter(Boolean).join(' ')}${e.dobleAmarilla ? ' (doble amarilla)' : ''}`));
+    }
     return lineas.join('\n');
   }
   $('#pCopiar').addEventListener('click', () => {
@@ -569,6 +714,8 @@
   $('#fEquipo').addEventListener('input', pintarPartido);
   $('#fRival').addEventListener('input', pintarPartido);
   setInterval(() => { if (!$('#appPartido').hidden) pintarReloj(); }, 500);
+  // Los minutos de cada jugadora avanzan con el reloj
+  setInterval(() => { if (!$('#appPartido').hidden && P.desde) pintarJugadorasPartido(); }, 15000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && P.desde) relojEncendido(true); });
 
   // ------------------------------------------------------------------ Pasar fichas entre apps (copiar y pegar)
@@ -734,6 +881,8 @@
       return true;
     },
     partido: () => P,
+    // Segundos en el campo de cada jugadora en el partido actual: { fichaId: segundos }
+    segundosJugados: () => (relojUsado() ? estadoCampo().seg : null),
     guardarPartido() { guardarP(); $('#fRival').value = P.rival || ''; pintarPartido(); },
   };
 

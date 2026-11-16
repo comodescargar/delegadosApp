@@ -37,8 +37,8 @@ export function crearTemporada(sb, { equipoActivo, partidoActualId }) {
       const ids = pa.data.map((p) => p.id);
       const vacio = { data: [], error: null };
       const [ev, co, fi] = await Promise.all([
-        ids.length ? sb.from('eventos').select('partido_id, tipo, ficha_id, minuto, parte').in('partido_id', ids) : vacio,
-        ids.length ? sb.from('convocatorias').select('partido_id, ficha_id, titular').in('partido_id', ids) : vacio,
+        ids.length ? sb.from('eventos').select('partido_id, tipo, ficha_id, ficha_entra, minuto, parte, segundo').in('partido_id', ids) : vacio,
+        ids.length ? sb.from('convocatorias').select('partido_id, ficha_id, titular, segundos_jugados').in('partido_id', ids) : vacio,
         sb.from('fichas').select('id, dorsal, tipo, cargo, activa, jugadoras(nombre)').eq('equipo_id', eq.id),
       ]);
       for (const r of [ev, co, fi]) if (r.error) throw r.error;
@@ -82,14 +82,21 @@ export function crearTemporada(sb, { equipoActivo, partidoActualId }) {
     const fila = (id) => {
       if (!porJugadora[id]) {
         const f = fichaPorId[id];
-        porJugadora[id] = { id, nombre: f?.jugadoras?.nombre || 'Sin nombre', dorsal: f?.dorsal || '', tipo: f?.tipo || 'jugadora', cargo: f?.cargo, activa: f?.activa !== false, conv: 0, tit: 0, goles: 0 };
+        porJugadora[id] = { id, nombre: f?.jugadoras?.nombre || 'Sin nombre', dorsal: f?.dorsal || '', tipo: f?.tipo || 'jugadora', cargo: f?.cargo, activa: f?.activa !== false, conv: 0, tit: 0, goles: 0, seg: 0, am: 0, ro: 0 };
       }
       return porJugadora[id];
     };
     fichas.filter((f) => f.tipo !== 'staff' && f.activa !== false).forEach((f) => fila(f.id));
     for (const p of jugados) {
-      p.co.forEach((c) => { if (fichaPorId[c.ficha_id]?.tipo === 'staff') return; const j = fila(c.ficha_id); j.conv++; if (c.titular) j.tit++; });
-      p.ev.filter((e) => e.tipo === 'gol' && e.ficha_id).forEach((e) => { fila(e.ficha_id).goles++; });
+      p.co.forEach((c) => {
+        if (fichaPorId[c.ficha_id]?.tipo === 'staff') return;
+        const j = fila(c.ficha_id); j.conv++; if (c.titular) j.tit++; j.seg += c.segundos_jugados || 0;
+      });
+      p.ev.filter((e) => e.ficha_id).forEach((e) => {
+        if (e.tipo === 'gol') fila(e.ficha_id).goles++;
+        if (e.tipo === 'amarilla') fila(e.ficha_id).am++;
+        if (e.tipo === 'roja') fila(e.ficha_id).ro++;
+      });
     }
     const jugadoras = Object.values(porJugadora).filter((j) => j.tipo !== 'staff');
     return { equipoId: eq.id, equipo: eq.nombre, lista, totales, jugadoras, fichaPorId };
@@ -213,14 +220,17 @@ export function crearTemporada(sb, { equipoActivo, partidoActualId }) {
   function tablaJugadoras(jugadoras, pj) {
     if (!jugadoras.length) return '<p class="nota">Sin jugadoras.</p>';
     const { campo, desc } = E.orden;
-    const valor = { nombre: (j) => j.nombre.toLowerCase(), dorsal: (j) => parseInt(j.dorsal, 10) || 999, conv: (j) => j.conv, tit: (j) => j.tit, goles: (j) => j.goles };
+    const valor = { nombre: (j) => j.nombre.toLowerCase(), dorsal: (j) => parseInt(j.dorsal, 10) || 999, conv: (j) => j.conv, tit: (j) => j.tit, goles: (j) => j.goles, seg: (j) => j.seg, tarj: (j) => j.ro * 10 + j.am };
+    // Minutos y tarjetas solo aparecen cuando ya se han apuntado (los partidos antiguos no los tienen)
+    const conMin = jugadoras.some((j) => j.seg > 0);
+    const conTarj = jugadoras.some((j) => j.am || j.ro);
     const lista = [...jugadoras].sort((a, b) => {
       const va = valor[campo](a); const vb = valor[campo](b);
       return (va > vb ? 1 : va < vb ? -1 : 0) * (desc ? -1 : 1) || a.nombre.localeCompare(b.nombre, 'es');
     });
     const th = (c, texto, clase = '') => `<th class="${clase}" aria-sort="${campo === c ? (desc ? 'descending' : 'ascending') : 'none'}"><button data-orden="${c}">${texto}${campo === c ? (desc ? ' ↓' : ' ↑') : ''}</button></th>`;
     return `<div class="t-tabla-cont"><table class="t-tabla">
-      <thead><tr>${th('dorsal', 'Nº', 'num')}${th('nombre', 'Jugadora')}${th('conv', 'Convocada')}${th('tit', 'Titular', 'num')}${th('goles', 'Goles', 'num')}</tr></thead>
+      <thead><tr>${th('dorsal', 'Nº', 'num')}${th('nombre', 'Jugadora')}${th('conv', 'Convocada')}${th('tit', 'Titular', 'num')}${conMin ? th('seg', 'Min.', 'num') : ''}${th('goles', 'Goles', 'num')}${conTarj ? th('tarj', 'Tarj.', 'num') : ''}</tr></thead>
       <tbody>${lista.map((j) => {
         const pct = pj ? Math.round((j.conv / pj) * 100) : 0;
         const pctTit = j.conv ? Math.round((j.tit / j.conv) * 100) : 0;
@@ -230,7 +240,9 @@ export function crearTemporada(sb, { equipoActivo, partidoActualId }) {
           <td><div class="t-conv" data-tip="${esc(`${j.nombre}: convocada en ${j.conv} de ${pj} partidos (${pct}%)`)}">
             <span class="t-medidor" aria-hidden="true"><i style="width:${pct}%"></i></span><span class="num">${j.conv}/${pj}</span></div></td>
           <td class="num" data-tip="${esc(`${j.nombre}: titular en ${j.tit} de ${j.conv} convocatorias (${pctTit}%)`)}">${j.tit}</td>
-          <td class="num"><strong>${j.goles}</strong></td></tr>`;
+          ${conMin ? `<td class="num" data-tip="${esc(`${j.nombre}: ${Math.round(j.seg / 60)} minutos en el campo${j.conv ? ` (${Math.round(j.seg / 60 / j.conv)} de media por convocatoria)` : ''}`)}">${Math.round(j.seg / 60)}</td>` : ''}
+          <td class="num"><strong>${j.goles}</strong></td>
+          ${conTarj ? `<td class="num t-tarj">${j.am ? `🟨${j.am > 1 ? j.am : ''}` : ''}${j.ro ? `🟥${j.ro > 1 ? j.ro : ''}` : ''}</td>` : ''}</tr>`;
       }).join('')}</tbody></table></div>`;
   }
 
@@ -245,7 +257,14 @@ export function crearTemporada(sb, { equipoActivo, partidoActualId }) {
       const tit = jug.filter((c) => c.titular); const sup = jug.filter((c) => !c.titular);
       const staff = p.co.filter((c) => F[c.ficha_id]?.tipo === 'staff');
       const abierto = E.abiertos.has(p.id);
-      const chip = (c) => `<span class="t-persona">${dorsalEn(p, c.ficha_id) ? `<b>${esc(dorsalEn(p, c.ficha_id))}</b>` : ''}${esc(nombre(c.ficha_id))}</span>`;
+      const chip = (c) => `<span class="t-persona">${dorsalEn(p, c.ficha_id) ? `<b>${esc(dorsalEn(p, c.ficha_id))}</b>` : ''}${esc(nombre(c.ficha_id))}${c.segundos_jugados ? `<small>${Math.round(c.segundos_jugados / 60)}'</small>` : ''}</span>`;
+      const textoEv = (e) => {
+        if (e.tipo === 'gol_rival') return `⚽ ${esc(p.rival || 'Rival')}`;
+        if (e.tipo === 'gol') return `⚽ ${esc(e.ficha_id ? nombre(e.ficha_id) : 'Gol nuestro')}`;
+        if (e.tipo === 'cambio') return `🔄 Entra ${esc(e.ficha_entra ? nombre(e.ficha_entra) : '—')}${e.ficha_id ? ` · sale ${esc(nombre(e.ficha_id))}` : ''}`;
+        return `${e.tipo === 'roja' ? '🟥' : '🟨'} ${esc(e.ficha_id ? nombre(e.ficha_id) : '—')}`;
+      };
+      const claseEv = (e) => (e.tipo === 'gol' ? 'favor' : e.tipo === 'gol_rival' ? 'contra' : 'otro');
       return `<li class="t-partido${abierto ? ' abierto' : ''}">
         <button class="t-partido-cab" data-partido="${p.id}" aria-expanded="${abierto}">
           <span class="t-fecha">${fechaCorta(p)}</span>
@@ -256,7 +275,7 @@ export function crearTemporada(sb, { equipoActivo, partidoActualId }) {
           ${tit.length ? `<h3>Titulares · ${tit.length}</h3><div class="t-personas">${tit.map(chip).join('')}</div>` : ''}
           ${sup.length ? `<h3>${tit.length ? 'Suplentes' : 'Convocadas'} · ${sup.length}</h3><div class="t-personas">${sup.map(chip).join('')}</div>` : ''}
           ${staff.length ? `<h3>Cuerpo técnico · ${staff.length}</h3><div class="t-personas">${staff.map(chip).join('')}</div>` : ''}
-          ${p.ev.length ? `<h3>Goles</h3><ol class="t-goles">${[...p.ev].sort((a, b) => a.parte - b.parte || a.minuto - b.minuto).map((e) => `<li class="${e.tipo === 'gol' ? 'favor' : 'contra'}"><span>${e.minuto ?? '–'}' · ${e.parte}ª</span>${e.tipo === 'gol' ? esc(e.ficha_id ? nombre(e.ficha_id) : 'Gol nuestro') : esc(p.rival || 'Rival')}</li>`).join('')}</ol>` : ''}
+          ${p.ev.length ? `<h3>${p.ev.some((e) => e.tipo !== 'gol' && e.tipo !== 'gol_rival') ? 'Lo que pasó' : 'Goles'}</h3><ol class="t-goles">${[...p.ev].sort((a, b) => a.parte - b.parte || (a.segundo ?? a.minuto * 60) - (b.segundo ?? b.minuto * 60)).map((e) => `<li class="${claseEv(e)}"><span>${e.minuto ?? '–'}' · ${e.parte}ª</span>${textoEv(e)}</li>`).join('')}</ol>` : ''}
         </div>` : ''}
       </li>`;
     }).join('')}</ul>`;

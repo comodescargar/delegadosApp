@@ -206,6 +206,23 @@
   .evento .min { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 64px; color: var(--suave); }
   .evento .que { flex: 1; min-width: 0; }
   .evento.rival .que { color: #fca5a5; }
+  .evento.cambio .que, .evento.amarilla .que, .evento.roja .que { color: var(--suave); }
+  .p-acciones { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+  .p-modos { align-self: flex-start; }
+  .p-ayuda { margin: 0; font-size: 14px; line-height: 1.5; color: var(--suave); min-height: 24px; }
+  .p-ayuda strong { color: var(--texto); }
+  .p-ayuda .btn { padding: 6px 12px; min-height: 40px; margin: 6px 6px 0 0; }
+  .p-ayuda .p-amarilla { background: #facc15; color: #111; border-color: #facc15; font-weight: 700; }
+  .p-ayuda .p-roja { background: #dc2626; color: #fff; border-color: #dc2626; font-weight: 700; }
+  .p-grupo { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--suave); margin: 12px 0 6px; }
+  .p-grupo:first-child { margin-top: 0; }
+  .gol-btn.en-campo { border-color: #2f6b45; background: #13291f; }
+  .gol-btn.banquillo { opacity: .92; }
+  .gol-btn.elegida { border-color: var(--acento); box-shadow: 0 0 0 2px var(--acento); }
+  .gol-btn.expulsada { opacity: .45; }
+  .gol-btn:disabled { cursor: not-allowed; }
+  .gol-btn span small { display: block; color: var(--suave); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .gol-btn i.tarj { color: inherit; font-weight: 400; }
   .evento button { background: none; border: 1px solid var(--borde); border-radius: 8px; color: var(--suave); padding: 4px 8px; cursor: pointer; font-size: 12px; }
   .seccion h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .07em; color: var(--suave); margin: 4px 0 0; }
 
@@ -415,10 +432,17 @@
       <button class="btn" id="pReiniciarReloj">Poner reloj a 0</button>
     </div>
 
-    <h2>Toca a quien marca</h2>
-    <div class="goleadoras" id="pGoleadoras"></div>
+    <div class="p-acciones">
+      <div class="segm p-modos" id="pAccion" role="group" aria-label="Qué quieres apuntar">
+        <button data-accion="gol" class="activo">⚽ Gol</button>
+        <button data-accion="cambio">🔄 Cambio</button>
+        <button data-accion="tarjeta">🟨 Tarjeta</button>
+      </div>
+      <p class="p-ayuda" id="pAyuda" role="status">Toca a quien marca.</p>
+    </div>
+    <div id="pGoleadoras"></div>
 
-    <h2>Goles del partido</h2>
+    <h2>Lo que ha pasado</h2>
     <div class="eventos" id="pEventos"></div>
     <div class="barra-acc">
       <button class="btn" id="pCopiar">Copiar resumen para WhatsApp</button>
