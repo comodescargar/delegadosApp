@@ -14,7 +14,7 @@
     : '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c) => (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)));
 
   // Equipo activo (null = modo local) y sincronizador con la nube (null = sin sincronizar)
-  const CTX = { equipoId: null, equipoNombre: '', sinc: null };
+  const CTX = { equipoId: null, equipoNombre: '', modalidad: null, sinc: null };
   const avisarSinc = (metodo, ...args) => { try { CTX.sinc?.[metodo]?.(...args); } catch (e) { console.error(e); } };
 
   // ------------------------------------------------------------------ Almacenamiento local
@@ -936,6 +936,34 @@
     }
   });
 
+  // ------------------------------------------------------------------ Alineación en la pizarra
+  // En el campo: las que están jugando (si el reloj ya ha corrido); si no, las titulares; si no hay, las convocadas.
+  function datosAlineacion() {
+    const conv = convocadasJug().length ? convocadasJug() : F.lista.filter((f) => !esStaff(f));
+    let campo = [];
+    if (relojUsado()) { const ids = estadoCampo().campo; campo = conv.filter((f) => ids.has(f.id)); }
+    if (!campo.length) campo = conv.filter((f) => f.titular);
+    const sinTitulares = !campo.length;
+    if (sinTitulares) campo = conv;
+    const ids = new Set(campo.map((f) => f.id));
+    const dato = (f) => ({ dorsal: nHoy(f), nombre: f.nombre || '' });
+    return {
+      titulo: P.rival ? `Alineación vs ${P.rival}` : 'Alineación',
+      mod: CTX.modalidad,
+      enCampo: [...campo].sort(porDorsal(nHoy)).map(dato),
+      banquillo: conv.filter((f) => !ids.has(f.id)).sort(porDorsal(nHoy)).map(dato),
+      sinTitulares,
+    };
+  }
+  function abrirAlineacion() {
+    if (!F.lista.some((f) => !esStaff(f))) { aviso('Añade antes las fichas de las jugadoras.'); return; }
+    const d = datosAlineacion();
+    window.Pizarra?.alineacion(d);
+    if (d.sinTitulares) aviso('No hay titulares marcadas: se han colocado las convocadas por dorsal. Márcalas en «Fichas» para afinar.');
+  }
+  $('#fAlineacion').addEventListener('click', abrirAlineacion);
+  $('#pAlineacion').addEventListener('click', abrirAlineacion);
+
   // ------------------------------------------------------------------ Copia de seguridad en un archivo
   // Fichas con sus fotos, el partido en curso y (con sesión) el historial de la temporada.
   // Al cargarla se añaden las fichas que falten; el historial queda en el archivo como registro.
@@ -994,6 +1022,7 @@
     async usarEquipo(equipo, sinc) {
       CTX.equipoId = equipo?.id || null;
       CTX.equipoNombre = equipo?.nombre || '';
+      CTX.modalidad = equipo?.modalidad || null;
       CTX.sinc = sinc || null;
       fEquipo.readOnly = !!CTX.equipoId;
       fEquipo.value = CTX.equipoId ? CTX.equipoNombre : leerLS('delegado.fEquipo', '');

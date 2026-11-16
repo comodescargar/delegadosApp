@@ -105,6 +105,58 @@ function docDesdeSistema(s, rival) {
   };
 }
 
+/**
+ * Alineación del partido: coloca a las jugadoras en un sistema de su modalidad.
+ * datos = { titulo, mod?, enCampo: [{ dorsal, nombre }], banquillo: [{ dorsal, nombre }] }
+ * La portera es la del dorsal 1 o 13 (si no hay, la primera); el resto, por dorsal, en el orden del sistema.
+ */
+const MOD_POR_NUMERO = { 5: 'sala', 7: 'f7', 11: 'f11' };
+const nombreCorto = (t) => { const p = String(t || '').trim().split(/\s+/)[0] || ''; return p.length > 10 ? p.slice(0, 9) + '.' : p; };
+function docAlineacion(datos, sistemaId) {
+  const mod = CAMPOS[datos.mod] ? datos.mod : (MOD_POR_NUMERO[datos.enCampo.length] || E.doc?.mod || 'f7');
+  const sistemas = BIB.sistemas.filter((s) => s.mod === mod);
+  const s = sistemas.find((x) => x.id === sistemaId) || sistemas[0];
+  const slots = [...s.j].sort((a, b) => b[3].startsWith('POR') - a[3].startsWith('POR'));
+  const jug = [...datos.enCampo];
+  let iPor = jug.findIndex((j) => ['1', '13'].includes(String(j.dorsal)));
+  if (iPor < 0) iPor = 0;
+  const ordenadas = jug.length ? [jug[iPor], ...jug.filter((_, i) => i !== iPor)] : [];
+  const fuera = ordenadas.slice(slots.length);
+  const elementos = {};
+  const pos = {};
+  ordenadas.slice(0, slots.length).forEach((j, i) => {
+    const [, x, y, puesto] = slots[i];
+    elementos['a' + (i + 1)] = { tipo: 'jugador', equipo: 'local', etiqueta: String(j.dorsal || '').slice(0, 3), portero: puesto.startsWith('POR'), puesto: nombreCorto(j.nombre) || puesto };
+    pos['a' + (i + 1)] = [x, y];
+  });
+  elementos.b = { tipo: 'balon' };
+  pos.b = [0.5, 0.5];
+  const banquillo = [...fuera, ...(datos.banquillo || [])];
+  const nombre = (j) => [j.dorsal, j.nombre].filter(Boolean).join(' ');
+  const huecos = slots.length - Math.min(slots.length, ordenadas.length);
+  const texto = [`Sistema ${s.nombre}.`, huecos ? `Faltan ${huecos} en el campo.` : '',
+    banquillo.length ? `Banquillo: ${banquillo.map(nombre).join(', ')}.` : ''].filter(Boolean).join(' ');
+  const p = pasoVacio(pos);
+  p.texto = texto;
+  return {
+    titulo: datos.titulo || 'Alineación', mod, vista: 'completo', categoria: 'sistema', nivel: '',
+    descripcion: `Alineación en ${s.nombre}. Arrastra las fichas para recolocarlas; puedes guardarla en «Mis jugadas».`,
+    origen: s.id, elementos, pasos: [p], alineacion: { datos, sistema: s.id },
+  };
+}
+
+// Para Fichas y Partido (fichas.js): abre la pizarra con la alineación
+window.Pizarra = {
+  alineacion(datos) {
+    cargarDoc(docAlineacion(datos));
+    E.verPuestos = true;
+    $('#chkPuestos').checked = true;
+    render();
+    window.mostrarSeccion?.('pizarra');
+    window.scrollTo(0, 0);
+  },
+};
+
 // ------------------------------------------------------------------ Geometría
 function cajaVista(doc) {
   const { W, L } = CAMPOS[doc.mod];
@@ -409,7 +461,19 @@ function actualizarProps() {
       zona: 'Arrastra para marcar una zona o espacio de juego.',
       borrar: 'Toca una ficha, una línea o una zona para borrarla.',
     };
-    cont.innerHTML = `<p class="suave">${ayudas[E.herramienta]}</p>`;
+    let h = `<p class="suave">${ayudas[E.herramienta]}</p>`;
+    const ali = E.doc.alineacion;
+    if (ali) {
+      h += `<label class="campo-form">Sistema de la alineación<select id="pSistemaAli">${BIB.sistemas.filter((s) => s.mod === E.doc.mod)
+        .map((s) => `<option value="${s.id}"${s.id === ali.sistema ? ' selected' : ''}>${esc(s.nombre)}</option>`).join('')}</select></label>
+        <p class="suave">Al cambiar de sistema se recolocan las mismas jugadoras.</p>`;
+    }
+    cont.innerHTML = h;
+    $('#pSistemaAli')?.addEventListener('change', (e) => {
+      const doc = docAlineacion({ ...ali.datos, mod: E.doc.mod }, e.target.value);
+      doc.titulo = E.doc.titulo;
+      cargarDoc(doc);
+    });
     return;
   }
   let h = '';
