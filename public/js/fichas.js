@@ -611,6 +611,13 @@
       <textarea class="entrada" id="fCopiarTexto" readonly hidden aria-label="Texto de las fichas"></textarea>`;
   });
 
+  // Huella corta de un texto largo (FNV-1a de 32 bits), para reconocer la misma foto
+  function huella(texto) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < texto.length; i++) { h ^= texto.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    return (h >>> 0).toString(16) + ':' + texto.length;
+  }
+
   async function textoAFoto(dataUrl) {
     if (!dataUrl) return null;
     try {
@@ -629,20 +636,25 @@
     if (i < 0) { aviso('Ese texto no son fichas copiadas desde la app. Vuelve a pulsar «Copiar fichas» en la otra app.'); return; }
     let datos;
     try { datos = JSON.parse(texto.slice(i + PREFIJO.length)); } catch { aviso('El texto está incompleto. Vuelve a copiarlo en la otra app.'); return; }
-    const clave = (f) => `${f.tipo === 'staff' ? 'staff' : 'jugadora'}|${(f.nombre || '').trim().toLowerCase()}|${f.tipo === 'staff' ? f.cargo : f.dorsal || ''}`;
-    const existentes = new Set(F.lista.map((f) => clave({ ...f, tipo: f.tipo || 'jugadora' })));
+    // Una ficha se considera repetida si ya se pegó la misma foto (huella de la imagen).
+    // Si no hay foto, solo si coinciden nombre y dorsal/cargo y el nombre no está vacío.
+    const huellaDe = (d) => (d.imagen ? `img:${huella(d.imagen)}` : null);
+    const claveSinFoto = (f) => ((f.nombre || '').trim()
+      ? `sin:${f.tipo === 'staff' ? 'staff' : 'jugadora'}|${f.nombre.trim().toLowerCase()}|${f.tipo === 'staff' ? f.cargo : f.dorsal || ''}` : null);
+    const existentes = new Set(F.lista.flatMap((f) => [f.huella, f.imagen ? null : claveSinFoto(f)]).filter(Boolean));
     let nuevas = 0; let repetidas = 0;
     for (const d of datos.fichas || []) {
-      if (existentes.has(clave(d))) { repetidas++; continue; }
+      const clave = huellaDe(d) || claveSinFoto(d);
+      if (clave && existentes.has(clave)) { repetidas++; continue; }
       const staff = d.tipo === 'staff';
       const f = {
         id: uuid(), equipoId: CTX.equipoId, tipo: staff ? 'staff' : 'jugadora', cargo: staff ? d.cargo || 'entrenador' : null,
         nombre: d.nombre || '', dorsal: staff ? '' : d.dorsal || '', dorsalPartido: '', convocada: true, titular: false,
-        creada: Date.now() + nuevas, imagen: await textoAFoto(d.imagen),
+        creada: Date.now() + nuevas, imagen: await textoAFoto(d.imagen), huella: huellaDe(d),
       };
       await guardarFicha(f);
       F.lista.push(f);
-      existentes.add(clave(f));
+      if (clave) existentes.add(clave);
       avisarSinc('fichaCambiada', f, 'nueva');
       nuevas++;
     }
