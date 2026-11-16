@@ -1,0 +1,114 @@
+/* Pestaña Temporada. Colores de datos validados contra el fondo de la app (#17233d):
+   azul = goles a favor, naranja = goles en contra; verde/rojo/gris = victoria/derrota/empate (siempre con letra). */
+#appTemporada {
+  --t-favor: #3987e5;
+  --t-contra: #d95926;
+  --t-pista: #1c3157;
+  --t-v: #0ca30c;
+  --t-e: #5b6474;
+  --t-d: #d03b3b;
+  --t-grid: #223154;
+  --t-base: #3a4a6e;
+}
+.t-cont { gap: 16px; }
+.t-vacio { text-align: center; padding: 40px 16px; border: 1px dashed var(--borde); border-radius: 14px; color: var(--suave); }
+.t-vacio strong { display: block; color: var(--texto); font-size: 17px; margin-bottom: 6px; }
+.t-vacio p { margin: 0 auto; max-width: 52ch; }
+
+/* Resumen */
+.t-resumen { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 10px; }
+.t-tile { background: var(--panel2); border: 1px solid var(--borde); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.t-lab { font-size: 12px; color: var(--suave); }
+.t-val { font-size: 30px; font-weight: 700; line-height: 1.1; }
+.t-val small { font-size: 14px; font-weight: 600; color: var(--suave); margin: 0 6px 0 2px; }
+.t-sub { font-size: 12px; color: var(--suave); }
+.t-segm { display: flex; gap: 2px; height: 8px; margin: 6px 0 2px; }
+.t-segm i { display: block; height: 100%; border-radius: 999px; min-width: 6px; }
+.t-segm .v { background: var(--t-v); }
+.t-segm .e { background: var(--t-e); }
+.t-segm .d { background: var(--t-d); }
+.t-racha { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+
+/* Chips de resultado: color + letra, nunca solo color */
+.t-res { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 26px; padding: 0 8px; border-radius: 8px; font-weight: 700; font-size: 13px; color: #fff; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.t-res.v { background: var(--t-v); }
+.t-res.e { background: var(--t-e); }
+.t-res.d { background: var(--t-d); }
+.t-res.pend { background: transparent; border: 1px dashed var(--borde); color: var(--suave); font-weight: 600; }
+
+/* Tarjetas de gráfico */
+.t-tarjeta { background: var(--panel2); border: 1px solid var(--borde); border-radius: 14px; padding: 14px; min-width: 0; }
+.t-tarjeta-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.t-tarjeta-cab h2 { margin: 0; font-size: 15px; text-transform: none; letter-spacing: 0; color: var(--texto); }
+.t-leyenda { display: flex; gap: 12px; font-size: 12px; color: var(--suave); }
+.t-leyenda span { display: inline-flex; align-items: center; gap: 6px; }
+.t-sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.t-sw.favor { background: var(--t-favor); }
+.t-sw.contra { background: var(--t-contra); }
+
+.t-scroll { overflow-x: auto; scrollbar-width: thin; }
+.t-svg { display: block; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.t-svg .favor { fill: var(--t-favor); }
+.t-svg .contra { fill: var(--t-contra); }
+.t-svg .t-grid { stroke: var(--t-grid); stroke-width: 1; }
+.t-svg .t-base { stroke: var(--t-base); stroke-width: 1; }
+.t-svg .t-eje { fill: var(--suave); font-size: 11px; font-variant-numeric: tabular-nums; }
+.t-svg .t-eje-sub { font-size: 10px; opacity: .75; }
+.t-svg .t-hit { fill: transparent; }
+.t-svg .t-hit:hover { fill: rgba(255, 255, 255, .04); }
+.t-svg path { cursor: pointer; }
+
+/* Goleadoras: barras horizontales */
+.t-barras { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.t-barras li { display: grid; grid-template-columns: minmax(90px, 180px) 1fr 28px; align-items: center; gap: 10px; cursor: default; }
+.t-quien { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-quien b, .t-persona b { display: inline-block; min-width: 24px; margin-right: 6px; padding: 0 5px; border-radius: 5px; background: #1d4ed8; color: #fff; font-size: 12px; text-align: center; }
+.t-pista { height: 16px; display: flex; align-items: center; }
+.t-pista i { display: block; height: 16px; min-width: 6px; background: var(--t-favor); border-radius: 0 4px 4px 0; }
+.t-num { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Tabla de jugadoras */
+.t-tabla-cont { overflow-x: auto; }
+.t-tabla { width: 100%; border-collapse: collapse; font-size: 14px; }
+.t-tabla th { text-align: left; font-weight: 600; color: var(--suave); font-size: 12px; border-bottom: 1px solid var(--borde); padding: 0; }
+.t-tabla th button { background: none; border: 0; color: inherit; font: inherit; padding: 8px 6px; cursor: pointer; width: 100%; text-align: inherit; }
+.t-tabla th.num, .t-tabla td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.t-tabla td { padding: 8px 6px; border-bottom: 1px solid var(--t-grid); }
+.t-tabla tr.baja td { opacity: .55; }
+.t-conv { display: flex; align-items: center; gap: 8px; min-width: 120px; }
+.t-medidor { flex: 1; height: 8px; background: var(--t-pista); border-radius: 999px; overflow: hidden; }
+.t-medidor i { display: block; height: 100%; background: var(--t-favor); border-radius: 999px; }
+.t-conv .num { font-size: 12px; color: var(--suave); min-width: 36px; text-align: right; }
+
+/* Lista de partidos */
+.t-partidos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.t-partido { border: 1px solid var(--borde); border-radius: 12px; background: var(--fondo); overflow: hidden; }
+.t-partido.abierto { border-color: #3a4a6e; }
+.t-partido-cab { width: 100%; display: grid; grid-template-columns: 58px 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.t-fecha { font-size: 12px; color: var(--suave); font-variant-numeric: tabular-nums; }
+.t-rival { min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.t-rival em { font-style: normal; font-size: 11px; font-weight: 600; margin-left: 6px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--borde); color: var(--suave); }
+.t-rival small { display: block; font-weight: 400; font-size: 12px; color: var(--suave); margin-top: 2px; }
+.t-partido-det { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 6px; }
+.t-partido-det h3 { margin: 6px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--suave); }
+.t-personas { display: flex; flex-wrap: wrap; gap: 6px; }
+.t-persona { font-size: 13px; padding: 3px 8px 3px 4px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--borde); }
+.t-goles { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.t-goles li { display: flex; gap: 10px; align-items: center; }
+.t-goles li::before { content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.t-goles li.favor::before { background: var(--t-favor); }
+.t-goles li.contra::before { background: var(--t-contra); }
+.t-goles span { color: var(--suave); font-size: 12px; min-width: 54px; font-variant-numeric: tabular-nums; }
+
+/* Tooltip */
+.t-tip { position: fixed; z-index: 45; max-width: 260px; padding: 8px 10px; border-radius: 10px; background: #0b1220; border: 1px solid #3a4a6e; color: var(--texto); font-size: 13px; pointer-events: none; box-shadow: 0 8px 24px rgba(0, 0, 0, .4); }
+
+@media (max-width: 720px) {
+  .t-barras li { grid-template-columns: minmax(80px, 40%) 1fr 24px; }
+  .t-resumen { grid-template-columns: 1fr 1fr 1fr; }
+  .t-tile-ancha { grid-column: 1 / -1; }
+  .t-val { font-size: 26px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .t-pista i, .t-medidor i { transition: width .4s ease; }
+}

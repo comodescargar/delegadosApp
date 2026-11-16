@@ -3,6 +3,7 @@
 import { createClient } from '@supabase/supabase-js';
 import QRCode from 'qrcode';
 import { crearSincronizador } from './sync.js';
+import { crearTemporada } from './temporada.js';
 import './club.css';
 
 const URL_SB = import.meta.env.VITE_SUPABASE_URL;
@@ -36,7 +37,8 @@ function iniciar(sb) {
     sinc = eq ? crearSincronizador(sb, eq, { aviso, alCambiarEstado: pintarNube }) : null;
     await window.FichasApp.usarEquipo(eq || null, sinc);
     await pintarNube();
-    sinc?.sincronizar();
+    await sinc?.sincronizar();
+    if (!document.getElementById('appTemporada')?.hidden) temporada.cargar();
   }
 
   const panelNube = document.getElementById('fNube');
@@ -128,7 +130,13 @@ function iniciar(sb) {
   seccion.hidden = true;
   seccion.innerHTML = '<div class="contenedor" id="clubCuerpo"></div>';
   document.getElementById('appPartido').after(seccion);
-  if (window.seccionGuardada?.() === 'club') window.mostrarSeccion('club');
+
+  const temporada = crearTemporada(sb, {
+    equipoActivo: () => equipoSinc,
+    partidoActualId: () => window.FichasApp?.partido()?.partidoId || null,
+  });
+  const guardada = window.seccionGuardada?.();
+  if (guardada === 'club' || guardada === 'temporada') window.mostrarSeccion(guardada);
 
   const cuerpo = seccion.querySelector('#clubCuerpo');
 
