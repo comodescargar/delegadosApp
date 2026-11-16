@@ -147,6 +147,7 @@ function docAlineacion(datos, sistemaId) {
 
 // Para Fichas y Partido (fichas.js): abre la pizarra con la alineación
 window.Pizarra = {
+  usarNube(api) { NUBE = api; B.club = null; },
   alineacion(datos) {
     cargarDoc(docAlineacion(datos));
     E.verPuestos = true;
@@ -776,9 +777,34 @@ function importarJSON(archivo) {
 }
 
 // ------------------------------------------------------------------ Biblioteca
-const B = { pestana: 'jugadas', mod: 'todas', cat: 'todas', texto: '' };
+const B = { pestana: 'jugadas', mod: 'todas', cat: 'todas', texto: '', club: null, cargandoClub: false };
+
+// ------------------------------------------------------------------ Jugadas compartidas en la nube
+// main.js (solo con sesión) llama a Pizarra.usarNube({ listar, guardar, borrar }).
+let NUBE = null;
+async function cargarClub() {
+  if (!NUBE || B.cargandoClub) return;
+  B.cargandoClub = true;
+  try { B.club = await NUBE.listar(); } catch (e) { B.club = { error: e.message || 'sin conexión' }; }
+  B.cargandoClub = false;
+  if (B.pestana === 'club' && !$('#biblioteca').hidden) pintarBiblioteca();
+}
+async function compartir(conClub) {
+  if (!NUBE) return;
+  const doc = clonar(E.doc);
+  delete doc.alineacion;
+  try {
+    const r = await NUBE.guardar(doc, { club: conClub });
+    if (r?.id) E.doc.nubeId = r.id;
+    B.club = null;
+    toast(conClub ? `Compartida con todo el club: ${doc.titulo}` : `Compartida con tu equipo: ${doc.titulo}`);
+  } catch (e) {
+    toast(`No se ha podido compartir: ${e.message || 'sin conexión'}`);
+  }
+}
 
 function abrirBiblioteca() {
+  B.club = null; // se vuelve a pedir a la nube al abrir la pestaña
   B.mod = E.doc.mod;
   $('#bibMod').value = B.mod;
   $('#biblioteca').hidden = false;
@@ -818,6 +844,18 @@ function pintarBiblioteca() {
       const rival = BIB.sistemas.find((r) => r.id === sel.value && r.mod === s.mod);
       return { clave: 's:' + s.id, doc: docDesdeSistema(s, rival), meta: CAMPOS[s.mod].nombre, nivel: '' };
     });
+  } else if (B.pestana === 'club') {
+    if (!B.club) {
+      lista.innerHTML = '<p class="vacio">Cargando las jugadas del club…</p>';
+      cargarClub();
+      return;
+    }
+    if (B.club.error) { lista.innerHTML = `<p class="vacio">No se han podido cargar: ${esc(B.club.error)}.</p>`; return; }
+    items = B.club.filter((x) => CAMPOS[x.doc?.mod] && filtraMod(x.doc.mod) && filtraTexto(x.doc.titulo)).map((x) => ({
+      clave: 'c:' + x.id, doc: { ...x.doc, nubeId: x.esMia ? x.id : undefined },
+      meta: `${CAMPOS[x.doc.mod].nombre} · ${x.compartidaClub ? 'Todo el club' : x.equipo || 'Equipo'} · ${x.esMia ? 'tuya' : 'de otro delegado'} · ${new Date(x.fecha).toLocaleDateString('es-ES')}`,
+      nivel: '', borrableNube: x.puedeBorrar ? x.id : null,
+    }));
   } else {
     items = leerMias().filter((x) => filtraMod(x.doc.mod) && filtraTexto(x.doc.titulo)).map((x) => ({
       clave: 'm:' + x.id, doc: x.doc, meta: `${CAMPOS[x.doc.mod].nombre} · ${new Date(x.guardado).toLocaleDateString('es-ES')}`, nivel: '', borrable: x.id,
@@ -825,7 +863,12 @@ function pintarBiblioteca() {
   }
 
   if (!items.length) {
-    lista.innerHTML = `<p class="vacio">${B.pestana === 'mias' ? 'Todavía no has guardado ninguna jugada. Usa «⋯ → Guardar en mis jugadas».' : 'No hay resultados con estos filtros.'}</p>`;
+    const vacio = {
+      mias: 'Todavía no has guardado ninguna jugada. Usa «⋯ → Guardar en mis jugadas».',
+      club: B.club?.sinEquipo ? 'Entra en «Club» y elige tu equipo para ver las jugadas compartidas.'
+        : 'Aún no hay jugadas compartidas. Abre una jugada y usa «⋯ → Compartir con mi equipo» o «con todo el club».',
+    };
+    lista.innerHTML = `<p class="vacio">${vacio[B.pestana] || 'No hay resultados con estos filtros.'}</p>`;
     return;
   }
   pintarBiblioteca.docs = {};
@@ -838,11 +881,21 @@ function pintarBiblioteca() {
         <div class="meta">${esc(it.meta)}${it.nivel ? ` · <span>${esc(it.nivel)}</span>` : ''}</div>
         <p>${esc(it.doc.descripcion || '')}</p>
         ${it.borrable ? `<button class="btn peligro mini-btn" data-borrar="${it.borrable}">Borrar</button>` : ''}
+        ${it.borrableNube ? `<button class="btn peligro mini-btn" data-borrar-nube="${it.borrableNube}">Dejar de compartir</button>` : ''}
       </div></article>`;
   }).join('');
 }
 
-$('#bibLista').addEventListener('click', (e) => {
+$('#bibLista').addEventListener('click', async (e) => {
+  const borrarNube = e.target.closest('[data-borrar-nube]');
+  if (borrarNube) {
+    e.stopPropagation();
+    if (!borrarNube.classList.contains('confirmar')) { borrarNube.classList.add('confirmar'); borrarNube.textContent = '¿Seguro? Toca otra vez'; return; }
+    try { await NUBE.borrar(borrarNube.dataset.borrarNube); toast('Jugada retirada de la nube.'); } catch (err) { toast(`No se ha podido borrar: ${err.message}`); }
+    B.club = null;
+    pintarBiblioteca();
+    return;
+  }
   const borrar = e.target.closest('[data-borrar]');
   if (borrar) {
     e.stopPropagation();
@@ -900,6 +953,8 @@ $('#menu').addEventListener('click', (e) => {
   $('#menu').hidden = true;
   if (acc === 'nueva') cargarDoc(docVacio(E.doc.mod));
   if (acc === 'guardar') guardar();
+  if (acc === 'compartir-equipo') compartir(false);
+  if (acc === 'compartir-club') compartir(true);
   if (acc === 'png') exportarPNG();
   if (acc === 'json') exportarJSON();
   if (acc === 'importar') $('#archivo').click();

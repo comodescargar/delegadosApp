@@ -155,6 +155,43 @@ function iniciar(sb) {
     equipoActivo: () => equipoSinc,
     partidoActualId: () => window.FichasApp?.partido()?.partidoId || null,
   });
+  // Jugadas de la pizarra compartidas con el equipo o con el club
+  window.Pizarra?.usarNube({
+    async listar() {
+      const eq = equipoSinc;
+      if (!eq || !S.sesion) return Object.assign([], { sinEquipo: true });
+      const { data, error } = await sb.from('jugadas').select('id, titulo, modalidad, doc, compartida_club, equipo_id, autor, actualizada_en')
+        .eq('club_id', eq.club_id).order('actualizada_en', { ascending: false });
+      if (error) throw error;
+      const uid = S.sesion.user.id;
+      const esAdmin = S.adminDe.includes(eq.club_id);
+      const nombreEq = (id) => S.equipos.find((e) => e.id === id)?.nombre || '';
+      return data.map((j) => ({
+        id: j.id, doc: { ...j.doc, titulo: j.titulo, mod: j.modalidad }, compartidaClub: j.compartida_club,
+        equipo: nombreEq(j.equipo_id), esMia: j.autor === uid, puedeBorrar: j.autor === uid || esAdmin, fecha: j.actualizada_en,
+      }));
+    },
+    async guardar(doc, { club }) {
+      const eq = equipoSinc;
+      if (!eq || !S.sesion) throw new Error('entra en «Club» y elige tu equipo');
+      const fila = { titulo: (doc.titulo || 'Jugada').slice(0, 120), modalidad: doc.mod, categoria: doc.categoria || null, doc, compartida_club: !!club };
+      const id = doc.nubeId;
+      delete doc.nubeId;
+      if (id) {
+        const { data, error } = await sb.from('jugadas').update({ ...fila, actualizada_en: new Date().toISOString() }).eq('id', id).select('id');
+        if (error) throw error;
+        if (data?.length) return { id };
+      }
+      const { data, error } = await sb.from('jugadas').insert({ ...fila, club_id: eq.club_id, equipo_id: eq.id }).select('id').single();
+      if (error) throw error;
+      return data;
+    },
+    async borrar(id) {
+      const { error } = await sb.from('jugadas').delete().eq('id', id);
+      if (error) throw error;
+    },
+  });
+
   // Copia de seguridad y fin de temporada (en la sección Club)
   let pausado = null;
   const fin = crearFinTemporada(sb, {

@@ -130,6 +130,7 @@ comprobar(await falla("insert into asistencias (entrenamiento_id, ficha_id, esta
 comprobar(await falla("insert into entrenamientos (equipo_id, fecha) values ($1, '2026-11-18')", [infantil.id]), 'NO puede crear entrenamientos en otro equipo');
 await filas("insert into jugadas (club_id, titulo, modalidad, doc, compartida_club) values ($1, 'Córner del Alevín', 'f7', '{}', true)", [club.id]);
 await filas("insert into jugadas (club_id, titulo, modalidad, doc) values ($1, 'Jugada privada', 'f7', '{}')", [club.id]);
+comprobar((await filas("update jugadas set compartida_club = true, actualizada_en = now() where titulo = 'Córner del Alevín' returning id")).length === 1, 'actualiza una jugada suya');
 
 // --- 3. Entrenadora del Infantil B
 console.log('\n3. Entrenadora del Infantil B');
@@ -141,6 +142,7 @@ comprobar((await filas('select count(*)::int n from storage.objects'))[0].n === 
 comprobar((await filas('select count(*)::int n from partidos'))[0].n === 0, 'no ve los partidos del Alevín A');
 const jugadasOtra = await filas('select titulo from jugadas');
 comprobar(jugadasOtra.length === 1 && jugadasOtra[0].titulo === 'Córner del Alevín', 've la jugada compartida con el club, no la privada');
+comprobar((await filas('delete from jugadas returning id')).length === 0, 'NO puede borrar jugadas de otros');
 comprobar((await filas("update fichas set dorsal = '99' returning id")).length === 0, 'NO puede modificar fichas de otro equipo');
 comprobar((await filas('select count(*)::int n from entrenamientos'))[0].n === 0 && (await filas('select count(*)::int n from asistencias'))[0].n === 0,
   'no ve los entrenamientos ni la asistencia del Alevín A');
