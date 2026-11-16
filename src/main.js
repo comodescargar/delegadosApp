@@ -76,8 +76,10 @@ function iniciar(sb) {
         <div class="barra-acc">
           <button class="btn" id="nubeCopiar">Copiar</button>
           ${navigator.share ? '<button class="btn" id="nubeCompartir">Compartir</button>' : ''}
-          <span class="nota">Válido hasta las ${hora}. El árbitro puede escanear el código QR.</span>
+          <button class="btn peligro" id="nubeAnular">Anular enlace</button>
         </div>
+        <span class="nota">Válido hasta las ${hora}. El árbitro puede escanear el código QR.
+          Si cambias la convocatoria, el enlace se actualiza solo al sincronizar.</span>
       </div>
     </div>`;
   }
@@ -116,6 +118,21 @@ function iniciar(sb) {
     if (id === 'nubeCompartir') {
       const url = panelNube.querySelector('#nubeEnlaceUrl').value;
       try { await navigator.share({ title: `Fichas · ${equipoSinc.nombre}`, url }); } catch { /* cancelado */ }
+    }
+    if (id === 'nubeAnular') {
+      const b = e.target;
+      if (!b.classList.contains('confirmar')) {
+        b.classList.add('confirmar'); b.textContent = '¿Anular? Toca otra vez';
+        setTimeout(() => { b.classList.remove('confirmar'); b.textContent = 'Anular enlace'; }, 3000);
+        return;
+      }
+      try {
+        await sinc.anularEnlaceArbitro();
+        aviso('Enlace anulado: el árbitro ya no puede ver las fichas con él.');
+      } catch (err) {
+        aviso(`No se ha podido anular: ${err.message}`);
+      }
+      pintarNube();
     }
   });
 

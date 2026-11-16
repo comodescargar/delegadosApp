@@ -202,6 +202,7 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
     try {
       const todo = await vaciarCola();
       if (todo) await bajar();
+      if (todo && refrescarFotosEnlace && enlaceVigente()) { await actualizarFotosEnlace(); refrescarFotosEnlace = false; }
       const n = pendientes();
       ponerEstado(n ? `${n} cambios pendientes de subir` : `Sincronizado · ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`, n ? 'aviso' : 'ok');
     } catch (e) {
@@ -247,6 +248,21 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
   }
 
   // ---------------------------------------------------------------- Enlace para el árbitro
+  // Enlaces temporales a las fotos de las convocadas, válidos hasta que caduque el enlace
+  async function fotosFirmadas(segundos) {
+    const conv = (await fichasDelEquipo()).filter((f) => f.convocada && f.fotoPath);
+    if (!conv.length) return {};
+    const { data, error } = await sb.storage.from('fichas').createSignedUrls(conv.map((f) => f.fotoPath), Math.max(60, Math.round(segundos)));
+    if (error) throw new Error(`Preparar fotos: ${error.message}`);
+    const porRuta = Object.fromEntries(conv.map((f) => [f.fotoPath, f.id]));
+    return Object.fromEntries((data || []).filter((d) => d.signedUrl).map((d) => [porRuta[d.path], d.signedUrl]));
+  }
+  const enlaceVigente = () => {
+    const e = FA.partido().enlaceArbitro;
+    return e && new Date(e.validoHasta) > new Date() ? e : null;
+  };
+  let refrescarFotosEnlace = false;
+
   async function crearEnlaceArbitro(horas = 8) {
     if (!navigator.onLine) throw new Error('Hace falta conexión para crear el enlace.');
     await sincronizar();
@@ -254,14 +270,7 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
     const P = FA.partido();
     const partidoId = await asegurarPartido();
     await vaciarCola();
-    const conv = (await fichasDelEquipo()).filter((f) => f.convocada && f.fotoPath);
-    let fotos = {};
-    if (conv.length) {
-      const { data, error } = await sb.storage.from('fichas').createSignedUrls(conv.map((f) => f.fotoPath), horas * 3600);
-      if (error) throw new Error(`Preparar fotos: ${error.message}`);
-      const porRuta = Object.fromEntries(conv.map((f) => [f.fotoPath, f.id]));
-      fotos = Object.fromEntries((data || []).filter((d) => d.signedUrl).map((d) => [porRuta[d.path], d.signedUrl]));
-    }
+    const fotos = await fotosFirmadas(horas * 3600);
     const { data, error } = await sb.from('enlaces_arbitro')
       .insert({ partido_id: partidoId, fotos, valido_hasta: new Date(Date.now() + horas * 3600_000).toISOString() })
       .select('token, valido_hasta').single();
@@ -271,9 +280,30 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
     return { url: `${location.origin}/a/${data.token}`, validoHasta: data.valido_hasta };
   }
 
+  // Si cambia la convocatoria con el enlace abierto, las fotos de las nuevas convocadas se añaden solas
+  async function actualizarFotosEnlace() {
+    const e = enlaceVigente();
+    if (!e) return;
+    const fotos = await fotosFirmadas((new Date(e.validoHasta) - Date.now()) / 1000);
+    comprobar(await sb.from('enlaces_arbitro').update({ fotos }).eq('token', e.token), 'Actualizar fotos del enlace');
+  }
+
+  async function anularEnlaceArbitro() {
+    const P = FA.partido();
+    const e = P.enlaceArbitro;
+    if (!e) return;
+    comprobar(await sb.from('enlaces_arbitro').update({ revocado: true }).eq('token', e.token), 'Anular enlace');
+    P.enlaceArbitro = null;
+    FA.guardarPartido();
+  }
+
   return {
     // Avisos de fichas.js
-    fichaCambiada(f) { cola.fichas[f.id] = true; guardarCola(); programar(); },
+    fichaCambiada(f, campo) {
+      cola.fichas[f.id] = true;
+      if (campo === 'convocada' || campo === 'nueva') refrescarFotosEnlace = true;
+      guardarCola(); programar();
+    },
     fichaBorrada(f) {
       if (!f) return;
       delete cola.fichas[f.id];
@@ -298,6 +328,7 @@ export function crearSincronizador(sb, equipo, { aviso = () => {}, alCambiarEsta
     fichasSoloMovil,
     subirFichasDelMovil,
     crearEnlaceArbitro,
+    anularEnlaceArbitro,
     detener() {
       activo = false;
       clearTimeout(temporizador);
